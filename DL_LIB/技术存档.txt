@@ -1,0 +1,262 @@
+
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_DMA2, ENABLE);
+    RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOE, ENABLE);
+    // 9 11 13 14
+
+    dl::GPIO pwmIO(GPIOE, GPIO_Pin_9 | GPIO_Pin_11 | GPIO_Pin_13 | GPIO_Pin_14, GPIO_Mode_AF, GPIO_Speed_50MHz, GPIO_OType_PP, GPIO_PuPd_NOPULL); // 这个IO被复用
+            
+    GPIO_PinAFConfig(GPIOE, GPIO_PinSource9, GPIO_AF_TIM1);
+    GPIO_PinAFConfig(GPIOE, GPIO_PinSource11, GPIO_AF_TIM1);
+    GPIO_PinAFConfig(GPIOE, GPIO_PinSource13, GPIO_AF_TIM1);
+    GPIO_PinAFConfig(GPIOE, GPIO_PinSource14, GPIO_AF_TIM1);
+
+    dl::Timer t(
+        TIM1,
+        4199, // 分频器 10Khz
+        TIM_CounterMode_Up,
+        199, // 周期  // 0.02s,50HZ
+        TIM_CKD_DIV1,
+        0
+    );
+    dl::TimerOutputChannel toc1(t, TIM_Channel_1, TIM_OCMode_PWM1, TIM_OutputState_Enable, TIM_OutputNState_Disable, 100, TIM_OCPolarity_High, TIM_OCNPolarity_High, TIM_OCIdleState_Reset, TIM_OCNIdleState_Reset);
+    dl::TimerOutputChannel toc2(t, TIM_Channel_2, TIM_OCMode_PWM1, TIM_OutputState_Enable, TIM_OutputNState_Disable, 198, TIM_OCPolarity_High, TIM_OCNPolarity_High, TIM_OCIdleState_Reset, TIM_OCNIdleState_Reset);
+    dl::TimerOutputChannel toc3(t, TIM_Channel_3, TIM_OCMode_PWM1, TIM_OutputState_Enable, TIM_OutputNState_Disable, 198, TIM_OCPolarity_High, TIM_OCNPolarity_High, TIM_OCIdleState_Reset, TIM_OCNIdleState_Reset);
+    dl::TimerOutputChannel toc4(t, TIM_Channel_4, TIM_OCMode_PWM1, TIM_OutputState_Enable, TIM_OutputNState_Disable, 198, TIM_OCPolarity_High, TIM_OCNPolarity_High, TIM_OCIdleState_Reset, TIM_OCNIdleState_Reset);
+
+    uint16_t DshotData[192] = {198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1, 198, 198, 198, 198, 198, 198, 198, 198, 1, 1, 1, 1}; // 16个一组传递数据
+
+    TIM_DMAConfig(TIM1, TIM_DMABase_CCR1, TIM_DMABurstLength_4Transfers); // CCR1~4
+
+    TIM_ARRPreloadConfig(TIM1, ENABLE);
+
+    TIM_DMACmd(TIM1, TIM_DMA_Update, ENABLE);
+
+    TIM_SelectCCDMA(TIM1, ENABLE); // 使能在 Update 事件触发时对 CCR1~CCR4 的 DMA 传输
+
+    toc1.setEnable();
+    dl::DL_DMA pwmDMA(
+        DMA2_Stream5, // TIM1 Update 的 DMA 建议使用 Stream5
+        DMA_FLAG_TCIF5,
+        DMA_Channel_6,
+        (uint32_t)&TIM1->DMAR, // 写到寄存器地址（取地址）
+        (uint32_t)DshotData,
+        DMA_DIR_MemoryToPeripheral,
+        192,
+        DMA_PeripheralInc_Disable,
+        DMA_MemoryInc_Enable,
+        DMA_PeripheralDataSize_HalfWord,
+        DMA_MemoryDataSize_HalfWord,
+        DMA_Mode_Normal,
+        DMA_Priority_Medium,
+        DMA_FIFOMode_Disable,
+        DMA_FIFOThreshold_Full,
+        DMA_MemoryBurst_Single,
+        DMA_PeripheralBurst_Single
+    );
+
+    
+    pwmDMA.setInterrupt(
+        [&pwmDMA,&DshotData](DMA_Stream_TypeDef* stream){
+            GPIO_SetBits(debugGPIO);
+            pwmDMA.reset(192, (uint32_t *)DshotData);
+            pwmDMA.start();
+        },
+        DMA2_Stream5_IRQn,
+        DMA_IT_TC,DMA_IT_TCIF5
+    );
+
+
+以上是完整的内容
+
+
+
+Dshot测试代码
+
+dl::delay_ms(1000);
+    GPIO_ResetBits(debugGPIO);
+    dl::delay_ms(1000);
+    GPIO_SetBits(debugGPIO);
+
+    dl::DShot doc(dl::DSHOT_TIM::DSHOT_TIM1, dl::DSHOT_RATE::DSHOT_150);
+    doc.start();
+
+    dl::delay_ms(1000);//等待启动,此时输出全0
+
+    doc.encodePreLoadDshotData(1000, 0, 0, 0);//1500
+
+    while (1)
+    {
+     // doc.encodePreLoadDshotData(255, 2000, 2000, 2000);//1500
+     // doc.encodePreLoadDshotData(682, 2000, 2000, 2000);//1500
+    }
+
+
+
+
+
+
+
+
+main::
+
+
+
+
+init();
+
+    dl::delay_ms(2000);
+    /*
+    ESP RST PA3
+    DEBUG A11
+    
+    //dl::USART usart1X(1520000, USART_WordLength_8b, USART_StopBits_1, USART_Parity_No, USART_Mode_Rx | USART_Mode_Tx, USART_HardwareFlowControl_None, 1, 1, USART1);
+    //dl::Socket socket(usart1X);
+    // dl::esp::init(socket);
+
+    //socket.sendString("Hello");
+
+    //dl::IIC bus(I2C1, 100000, I2C_Mode_I2C, I2C_DutyCycle_2, 0x51, I2C_Ack_Enable, I2C_AcknowledgedAddress_7bit);
+
+    //dl::IICDevice bme280(bus, 0x76);
+    // 先读取 0x88~0xA1（26字节）
+
+    //dl::BME280::init(bme280);
+    */
+    dl::DShot ds(dl::DSHOT_TIM::DSHOT_TIM1,dl::DSHOT_RATE::DSHOT_150);
+    ds.start();
+    ds.encodePreLoadDshotData(0,0,0,0);
+    debugSet;
+    dl::delay_ms(1500);
+    debugReset;
+    ds.encodePreLoadDshotData(200,200,200,200);
+    while (1) {
+
+        /*
+        dl::BME280::readTPH(bme280);
+        uint64_t op = dl::BME280::rcvData.pressure;
+        uint32_t ot = dl::BME280::rcvData.temperature;
+        uint32_t oh = dl::BME280::rcvData.humidity;
+
+        float p  = (op) / 256.f;
+        float t  = ot / (100.f);
+        double h = oh / 1024.f;
+        //  float deltahight = (((pow((double)p0 / p, 1 / 5.257) - 1) * (t + 273.15)) / 0.0065);
+
+        sprintf(str, "pressure: %f\ntempreture: %f\nhumidity: %f\n", p, t, h);
+        socket.sendString(str);
+        
+        */
+    }
+
+    
+
+
+dl::IIC bus(dIIC2_cB10_dB11);
+    logger << "IIC bus inited: \n"
+           << LCMD::FLUSH;
+    dl::IMUGData data;
+    dl::MPU9250 mpu(MPU9250_ADDRESS_AD0_LOW, &data);
+
+    dl::delay_ms(500);
+    mpu.init(512, &bus);
+
+    // mpu.read();
+    // while (true)
+    // {
+    //     logger<<"UT: "<<data.mag[0]<<" "<<data.mag[1]<<" "<<data.mag[2]<<LCMD::NFLUSH;
+    //     dl::delay_ms(20);
+    // }
+    uint32_t last_time = 0;
+    while (true) {
+        dPA11 = 0;
+        mpu.read();
+        MadgwickAHRSupdate(data.gyro[0] / 57.29578, data.gyro[1] / 57.29578, data.gyro[2] / -57.29578, data.accel[0], data.accel[1], data.accel[2], data.mag[0], data.mag[1], data.mag[2]);
+        //     MadgwickAHRSupdateIMU(data.gyro[0] / 57.29578, data.gyro[1] / 57.29578, data.gyro[2] / -57.29578, data.accel[0], data.accel[1], data.accel[2]);
+        logger << "AC:" << data.accel[0] << " " << data.accel[1] << " " << data.accel[1] << " " << LCMD::NFLUSH;
+        logger << "GR: " << data.gyro[0] << " " << data.gyro[1] << " " << data.gyro[2] << " " << LCMD::NFLUSH;
+        logger << "UT: " << data.mag[0] << " " << data.mag[1] << " " << data.mag[2] << LCMD::NFLUSH;
+        float pitch = asinf(-2 * q1 * q3 + 2 * q0 * q2) * 57.3f;
+        float roll  = atan2f(2 * q2 * q3 + 2 * q0 * q1, -2 * q1 * q1 - 2 * q2 * q2 + 1) * 57.3f;
+        float yaw   = atan2f(2 * (q1 * q2 + q0 * q3), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3) * 57.3f;
+        logger << "YPR: " << yaw << " " << pitch << " " << roll << " " << LCMD::NFLUSH;
+        dPA11     = 1;
+        last_time = SystemClockMilliseconds;
+        // 四组，忽略
+    }
+    while (1);
+
+
+
+    格式化
+
+    logger << "No FileSystem" << LCMD::NFLUSH;
+
+          MKFS_PARM parm{
+            .fmt     = FM_FAT32,
+            .align   = 0,
+            .n_fat   = 1,
+            .n_root  = 0,
+            .au_size = 4096,
+        };
+        logger<<"SECTORS" <<(uint32_t) ( DL_SD_CardCapacity/DL_SD_CardBlockSize)<<LCMD::NFLUSH;
+
+        fres = f_mkfs("0:", &parm, fBuf, 1024);
+        logger << "mkfs result:" << fres << LCMD::NFLUSH;
+
+        fres = f_mount(NULL, "0:", 1);
+        fres = f_mount(&fs, "0:", 1);
+        logger << "mount result agian:" << fres << LCMD::NFLUSH;
+
+
+        SD卡读取
+
+   dl::NVIC_IT_init_plus(DMA2_Stream6_IRQn, 1, 2, nullptr);
+    dl::NVIC_IT_init_plus(SDIO_IRQn, 1, 3, nullptr);
+
+
+    
+
+    FATFS fs;
+    FRESULT fres = f_mount(&fs, "0:", 1);
+
+    logger << "mount result:" << fres << LCMD::NFLUSH;
+
+    if (fres == FR_NO_FILESYSTEM) {
+        logger << "No FileSystem" << LCMD::NFLUSH;
+    } else {
+        logger << "File System OK" << LCMD::NFLUSH;
+        FIL file;
+        FILINFO info;
+        FRESULT fres = f_stat("/config.txt", &info);
+
+        logger << "START Open,File Result: " << fres << LCMD::NFLUSH;
+
+        fres = f_open(&file, "/config.txt", FA_READ);
+
+        logger << "Open File Result: " << fres << LCMD::NFLUSH;
+        unsigned int len;
+
+        
+
+        char buf[128];
+
+        // logger<<"Write Test:"<< f_write(&file,"Hello,Fatfs&SD Card!\n",20,&len)<<LCMD::NFLUSH;
+        logger << "Read Test:" << f_read(&file, buf, 11, &len);
+        logger << "buf[0]:" << buf[0] << LCMD::NFLUSH;
+        logger << "buf[1]:" << buf[1] << LCMD::NFLUSH;
+        logger << "buf[2]:" << buf[2] << LCMD::NFLUSH;
+        logger << "buf[3]:" << buf[3] << LCMD::NFLUSH;
+        logger << "buf[4]:" << buf[4] << LCMD::NFLUSH;
+        logger << "buf[5]:" << buf[5] << LCMD::NFLUSH;
+        logger << "buf[6]:" << buf[6] << LCMD::NFLUSH;
+        logger << "buf[7]:" << buf[7] << LCMD::NFLUSH;
+        logger << "buf[8]:" << buf[8] << LCMD::NFLUSH;
+        logger << "buf[9]:" << buf[9] << LCMD::NFLUSH;
+        logger << "buf[10]:" << buf[10] << LCMD::NFLUSH;
+        logger << "len:" << len << LCMD::NFLUSH;
+
+        logger << "Close File:" << f_close(&file) << LCMD::NFLUSH;
+    }
+    dl::message::fetchFile(socket, "config.txt");
+
+    logger << "Done" << LCMD::NFLUSH;
