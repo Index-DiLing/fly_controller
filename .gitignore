@@ -17,6 +17,9 @@
 /dilibs
 /Objects
 /RTE
+
+/mains
+/DebugConfig
 .clang-format
 .clangd
 dl_fly.uvoptx
@@ -26,4 +29,3 @@ dl_fly.uvprojx
 EventRecorderStub.scvd
 
 .vscode
-/mains
