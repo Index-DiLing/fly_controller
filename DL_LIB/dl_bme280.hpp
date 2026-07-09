@@ -90,25 +90,27 @@ namespace dl
         }
 
         // 需要测试TODO:
+
+        #define BME280_IIC_ADDRESS 0x76
         void bme280_init(dl::IIC *bus)
         {
             uint8_t set = 0b10010011;
 
             uint8_t buf[34];
 
-            bus->read(0x76, 0x88, buf, 24);
+            bus->read(BME280_IIC_ADDRESS, 0x88, buf, 24);
 
-            bus->read(0x76, 0xA1, buf + 24, 1);
+            bus->read(BME280_IIC_ADDRESS, 0xA1, buf + 24, 1);
 
-            bus->read(0x76, 0xE1, buf + 25, 8);
+            bus->read(BME280_IIC_ADDRESS, 0xE1, buf + 25, 8);
 
             memcpy(&calib, buf, 33);
 
-            bus->write(0x76, 0xF4, &set, 1);
+            bus->write(BME280_IIC_ADDRESS, 0xF4, &set, 1);
 
             // 4. 设置 config（待机时间 62.5ms，滤波器关闭）
             uint8_t config = 0b00101100; // t_sb = 001 (62.5ms), filter = 011 (8x)
-            bus->write(0x76, 0xF5, &config, 1);
+            bus->write(BME280_IIC_ADDRESS, 0xF5, &config, 1);
         }
 
         void bme280_read(dl::IIC *bus, bmeData *data)
@@ -116,7 +118,7 @@ namespace dl
 
             uint8_t rawData[8];
 
-            bus->read(0x76, 0xF7, rawData, 8);
+            bus->read(BME280_IIC_ADDRESS, 0xF7, rawData, 8);
 
             // 压力
             uint32_t press_raw = ((uint32_t)rawData[0] << 12) | ((uint32_t)rawData[1] << 4) | ((uint32_t)(rawData[2] >> 4));
