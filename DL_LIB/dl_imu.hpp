@@ -17,7 +17,7 @@ namespace dl
             // 磁力计校准参数针对于这个MPU9250
             accel[0] -= accelBias[0];
             accel[1] -= accelBias[1];
-            // accel[2] -= accelBias[2];
+            accel[2] -= accelBias[2];
             gyro[0] -= gyroBias[0];
             gyro[1] -= gyroBias[1];
             gyro[2] -= gyroBias[2];
@@ -99,34 +99,42 @@ namespace dl
 
         DEBUG_FUNC(logger << "MPU9250 Inited" << LCMD::FLUSH;);
         DEBUG_FUNC(logger << "Calibrating MPU9250..." << LCMD::FLUSH;);
-        for (uint16_t i = 0; i < calibrationCnt; i++) {
-            float g[3] = {0}, dps[3] = {0}, ut[3] = {0};
-            if (mpu9250_basic_read(g, dps, ut) != 0) {
-                return false;
-            }
-            data->accelBias[0] += g[0];
-            data->accelBias[1] += g[1];
-            data->accelBias[2] += g[2];
+        // for (uint16_t i = 0; i < calibrationCnt; i++) {
+        //     float g[3] = {0}, dps[3] = {0}, ut[3] = {0};
+        //     if (mpu9250_basic_read(g, dps, ut) != 0) {
+        //         return false;
+        //     }
+        //     data->accelBias[0] += g[0];
+        //     data->accelBias[1] += g[1];
+        //     data->accelBias[2] += g[2];
 
-            data->gyroBias[0] += dps[0];
-            data->gyroBias[1] += dps[1];
-            data->gyroBias[2] += dps[2];
+        //     data->gyroBias[0] += dps[0];
+        //     data->gyroBias[1] += dps[1];
+        //     data->gyroBias[2] += dps[2];
 
-            DEBUG_FUNC(logger << "Calibrating MPU9250: " << i << LCMD::NFLUSH;);
-        }
+        //     DEBUG_FUNC(logger << "Calibrating MPU9250: " << i << LCMD::NFLUSH;);
+        // }
 
-        data->accelBias[0] /= calibrationCnt;
-        data->accelBias[1] /= calibrationCnt;
-        data->accelBias[2] /= calibrationCnt;
+        // data->accelBias[0] /= calibrationCnt;
+        // data->accelBias[1] /= calibrationCnt;
+        // data->accelBias[2] /= calibrationCnt;
 
-        data->accelBias[0] += 0;
-        data->accelBias[1] += 0;
-        data->accelBias[2] += 0; // z轴分量为重力加速度
+        // data->accelBias[0] += 0;
+        // data->accelBias[1] += 0;
+        // data->accelBias[2] += 0; // z轴分量为重力加速度
 
-        data->gyroBias[0] /= calibrationCnt;
-        data->gyroBias[1] /= calibrationCnt;
-        data->gyroBias[2] /= calibrationCnt;
+        // data->gyroBias[0] /= calibrationCnt;
+        // data->gyroBias[1] /= calibrationCnt;
+        // data->gyroBias[2] /= calibrationCnt;
 
+        data->accelBias[0] =  -0.0319777000;
+        data->accelBias[1] = 0.0183703709;
+        data->accelBias[2] = -1.9975870980; // z轴分量为重力加速度
+
+        data->gyroBias[0] = -0.4853;
+        data->gyroBias[1] = 1.2867;
+        data->gyroBias[2] = 0.9243; // z轴分量为重力加速度
+        
         DEBUG_FUNC(logger << "MPU9250 Calibrated" << LCMD::FLUSH;);
 
         return true;

@@ -20,6 +20,7 @@ virtualFolder:
         - path: stm32f4xx_it.cpp
         - path: global.h
         - path: global.cpp
+        - path: main_test.cpp
       folders: []
     - name: DOCS
       files: []
@@ -96,6 +97,7 @@ targets:
     excludeList:
       - <virtual_root>/STARTUP/startup_stm32f40xx.s
       - DL_LIB/FF16
+      - <virtual_root>/USER/main.cpp
     settings:
       debugger: cortex-debug
     toolchain: AC6

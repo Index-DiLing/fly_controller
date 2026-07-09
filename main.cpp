@@ -71,6 +71,7 @@ void lamp(uint8_t s)
         dPF4 = 0;
     }
 }
+#define COMPILE_MPU
 
 int main()
 {
@@ -91,13 +92,14 @@ int main()
     };
 
     dl::IIC iicBus2(dIIC2_cB10_dB11);
-    // dl::IIC iicBus1(dIIC1_cA6_dA7);
-
+#ifdef COMPILE_MPU
     dl::MPU9250 mpu9250(MPU9250_ADDRESS_AD0_LOW, &mpu9250_data);
 
     dPF3 = 1;
     mpu9250.init(512, &iicBus2);
     dPF3 = 0;
+
+#endif
 
     socket.ASyncRead(rmsgBuf.src, 4); // 绕过wrapper
 
@@ -142,52 +144,55 @@ int main()
     mm.requestIntParamMsg((uint8_t *)"DshotStartMotorValue", strlen("DshotStartMotorValue"));
     mm.requestIntParamMsg(strWithLen("lampTime"));
     mm.requestIntParamMsg((uint8_t *)"DshotStartDelay", strlen("DshotStartDelay"));
-    mm.requestIntParamMsg((uint8_t *)"DshotRunningDelay", strlen("DshotRunningDelay"));
-    mm.requestIntParamMsg(strWithLen("targetPitch"));
+    mm.requestIntParamMsg((uint8_t *)"DshotRunningDelay", strlen("DshotRunningDelay"));                          
     socket.sendData(msgBuf);
     socket.ASyncWait();
     uint16_t dvalue[4];
     logger << "DshotStartMotorValue: " << rmsgBuf.read<int>();
-    uint8_t lt= (uint8_t) rmsgBuf.read<int>();
+    uint8_t lt = (uint8_t)rmsgBuf.read<int>();
     logger << "lampTime: " << lt << LCMD::NFLUSH;
-    dl::DShot ds(dl::DSHOT_TIM::DSHOT_TIM1, dl::DSHOT_RATE::DSHOT_300,(uint8_t) rmsgBuf.read<int>(),(uint8_t) rmsgBuf.read<int>());
+
+    dl::DShot ds(dl::DSHOT_TIM::DSHOT_TIM1, dl::DSHOT_RATE::DSHOT_300, (uint8_t)rmsgBuf.read<int>(), (uint8_t)rmsgBuf.read<int>());
 
     if (enableDshot) {
         ds.start();
-    }
-    logger << "initMotorValue: " << dvalue[0] << LCMD::NFLUSH;
 
-    ds.encodePreLoadDshotData(dvalue);
-    
-    // dl::BME280::bme280_init(&iicBus1);
+        logger << "initMotorValue: " << dvalue[0] << LCMD::NFLUSH;
+
+        ds.encodePreLoadDshotData(dvalue);
+    }
+    dl::BME280::bme280_init(&iicBus2);
     uint32_t t = SystemClockMilliseconds;
     dPF3       = 1;
     while (SystemClockMilliseconds - t < 10000 || testSensor) {
         uint32_t tt = SystemClockMilliseconds;
+#ifdef COMPILE_MPU
         mpu9250.read();
+#endif
         MadgwickAHRSupdate(mpu9250_data.gyro[0] / 57.29f, mpu9250_data.gyro[1] / 57.29f, mpu9250_data.gyro[2] / 57.29f, mpu9250_data.accel[0], mpu9250_data.accel[1], mpu9250_data.accel[2], mpu9250_data.mag[0], mpu9250_data.mag[1], mpu9250_data.mag[2]);
         sampleFreq = (1000.0f / (float)(SystemClockMilliseconds - tt));
         if (SystemClockMilliseconds - tt < 10) {
             dl::delay_ms(10 - SystemClockMilliseconds + tt);
         }
+
         convertQuantToEuler();
-        logger << "YPR: " << yaw << " " << pitch << " " << roll << " ";
-        logger << "Initing AHRS " << SystemClockMilliseconds - t << LCMD::NFLUSH;
+        mm.b280Msg(bmeData.temperature, bmeData.humidity, bmeData.pressure);
+        mm.posMsg(q0, q1, q2, q3, mpu9250_data.gyro[0], mpu9250_data.gyro[1], mpu9250_data.gyro[2], mpu9250_data.accel[0], mpu9250_data.accel[1], mpu9250_data.accel[2], mpu9250_data.mag[0], mpu9250_data.mag[1], mpu9250_data.mag[2]);
+        logger << "YPR: " << yaw << " " << pitch << " " << roll << " " << LCMD::NFLUSH;
     }
-    dPF3         = 0;
-    target_pitch = rmsgBuf.read<int>();
-#if 0
-#endif
+    dPF3 = 0;
     while (1) {
         uint32_t tt = SystemClockMilliseconds;
+#ifdef COMPILE_MPU
         mpu9250.read();
+#endif
         MadgwickAHRSupdate(mpu9250_data.gyro[0] / 57.29f, mpu9250_data.gyro[1] / 57.29f, mpu9250_data.gyro[2] / 57.29f, mpu9250_data.accel[0], mpu9250_data.accel[1], mpu9250_data.accel[2], mpu9250_data.mag[0], mpu9250_data.mag[1], mpu9250_data.mag[2]);
-        //dl::BME280::bme280_read(&iicBus1, &bmeData);
+        // dl::BME280::bme280_read(&iicBus1, &bmeData);
 
         convertQuantToEuler();
         PIDRateControl();
         PIDAngleControl(&ds);
-        
+
         // logger << "YPR: " << yaw << " " << pitch << " " << roll << " " << LCMD::NFLUSH;
         // logger << "updatePID throttles: " << (uint32_t)throttleValueF[0] << " " << (uint32_t)throttleValueF[1] << " " << (uint32_t)throttleValueF[2] << " " << (uint32_t)throttleValueF[3] << LCMD::NFLUSH;
         mm.motorMsg(throttleValue[0], throttleValue[1], throttleValue[2], throttleValue[3]);

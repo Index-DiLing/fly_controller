@@ -63,12 +63,11 @@ extern volatile float beta;             // algorithm gain
 extern volatile float q0, q1, q2, q3;   // quaternion of sensor frame relative to auxiliary frame
 extern volatile float roll, pitch, yaw; // Euler angles of sensor frame relative to auxiliary frame
 
-inline void convertQuantToEuler()
-{
-    pitch = fmod(asinf(-2 * q1 * q3 + 2 * q0 * q2) * 57.3f + 180, 360);
-    roll  = fmod((atan2f(2 * q2 * q3 + 2 * q0 * q1, -2 * q1 * q1 - 2 * q2 * q2 + 1) * 57.3f + 180), 360);
-    yaw   = fmod(atan2f(2 * (q1 * q2 + q0 * q3), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3) * 57.3f + 180, 360);
-}
+#define convertQuantToEuler() {\
+    pitch = fmod(asinf(-2 * q1 * q3 + 2 * q0 * q2) * 57.3f + 180, 360);\
+    roll  = fmod((atan2f(2 * q2 * q3 + 2 * q0 * q1, -2 * q1 * q1 - 2 * q2 * q2 + 1) * 57.3f + 180), 360);\
+    yaw   = fmod(atan2f(2 * (q1 * q2 + q0 * q3), q0 * q0 + q1 * q1 - q2 * q2 - q3 * q3) * 57.3f + 180, 360);\
+    }
 
 /*=================================================================================================*/
 
