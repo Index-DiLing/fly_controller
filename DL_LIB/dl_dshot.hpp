@@ -210,7 +210,7 @@ namespace dl
             }
         }
 
-        void start()
+        void start(uint16_t initTime = 3600)
         {
 
             toc1.setEnable();
@@ -219,7 +219,7 @@ namespace dl
             toc4.setEnable();
             pwmDMA.start(); // 启动传输
             encodePreLoadDshotData(0, 0, 0, 0);
-            dl::delay_ms(3600);
+            dl::delay_ms(initTime);
             isStart = false;
         }
     };
