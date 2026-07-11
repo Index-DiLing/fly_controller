@@ -45,7 +45,6 @@ static uint8_t rx_buf[256];
 #include "dl_dshot.hpp"
 dl::IMUGData mpu9250_data;
 
-
 volatile float roll, pitch, yaw;
 
 uint8_t *XmmsgBuf = new uint8_t[512];
@@ -88,17 +87,20 @@ int main()
     mpu9250.init(512, &iicBus2);
     dPF3 = 0;
 
-    socket.ASyncRead(rmsgBuf.src, 16);
+    socket.ASyncRead(rmsgBuf.src, 20);
 
     mm.initMsg();
 
     mm.requestIntParamMsg((uint8_t *)"DshotStartMotorValue", strlen("DshotStartMotorValue"));
+
 
     mm.requestIntParamMsg(strWithLen("lampTime"));
 
     mm.requestIntParamMsg((uint8_t *)"DshotStartDelay", strlen("DshotStartDelay"));
 
     mm.requestIntParamMsg((uint8_t *)"DshotRunningDelay", strlen("DshotRunningDelay"));
+    
+    mm.requestIntParamMsg(strWithLen("DshotInitTime"));
 
     socket.sendData(msgBuf);
 
@@ -111,30 +113,37 @@ int main()
     uint8_t lt = rmsgBuf.read<int>();
 
     uint8_t iDelay = rmsgBuf.read<int>();
-    
+
     uint8_t rDelay = rmsgBuf.read<int>();
 
-    dvalue[0] =dv;dvalue[1] =dv;dvalue[2] =dv;dvalue[3] =dv;
+    uint16_t initTime = rmsgBuf.read<int>();
 
+    dvalue[0] = dv;
+    dvalue[1] = dv;
+    dvalue[2] = dv;
+    dvalue[3] = dv;
 
     logger << "lampTime: " << lt << LCMD::NFLUSH;
+
+    logger << "DshotInitTime: " << initTime << LCMD::NFLUSH;
 
     logger << "initMotorValue: " << dvalue[2] << LCMD::NFLUSH;
 
     dl::DShot ds(dl::DSHOT_TIM::DSHOT_TIM1, dl::DSHOT_RATE::DSHOT_300, iDelay, rDelay);
 
-    //启动dshot;
-    ds.start();
+    // 启动dshot;
+    ds.start(initTime);
 
     ds.encodePreLoadDshotData(dvalue);
 
     uint32_t t = SystemClockMilliseconds;
 
-    dPF3 = 1;
-
     while (true) {
+
+        dPF3        = 1;
         uint32_t tt = SystemClockMilliseconds;
         mpu9250.read();
+
         MadgwickAHRSupdate(mpu9250_data.gyro[0] / 57.29f, mpu9250_data.gyro[1] / 57.29f, mpu9250_data.gyro[2] / 57.29f, mpu9250_data.accel[0], mpu9250_data.accel[1], mpu9250_data.accel[2], mpu9250_data.mag[0], mpu9250_data.mag[1], mpu9250_data.mag[2]);
         sampleFreq = (1000.0f / (float)(SystemClockMilliseconds - tt));
         convertQuantToEuler();
@@ -142,7 +151,9 @@ int main()
         if (SystemClockMilliseconds - tt < 10) {
             dl::delay_ms(10 - SystemClockMilliseconds + tt);
         }
+        socket.sendData(msgBuf);
+
+        dPF3 = 0;
     }
-    dPF3 = 0;
     lamp(lt);
 }
