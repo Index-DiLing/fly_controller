@@ -193,6 +193,7 @@ namespace dl
      */
     void DMA::setDoubleBuffer(uint8_t* secondBuf){
         DMA_DoubleBufferModeConfig(dmax_streamx,(uint32_t) secondBuf,DMA_Memory_0);
+        DMA_DoubleBufferModeCmd(dmax_streamx,ENABLE);
     }
     bool DMA::isTransferingFirstBuffer(){
         return (dmax_streamx->CR & DMA_SxCR_CT) == 0;

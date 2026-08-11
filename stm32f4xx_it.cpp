@@ -23,7 +23,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "stm32f4xx_it.h"
 #include "stm32f4xx.h"
-
+#include "rt-thread/include/rtthread.h"
 
 #include "dl_nvic_it.h"
 #include "global.h"
@@ -62,13 +62,13 @@ void NMI_Handler(void)
   * @param  None
   * @retval None
   */
-void HardFault_Handler(void)
-{
-  /* Go to infinite loop when Hard Fault exception occurs */
-  while (1)
-  {
-  }
-}
+// void HardFault_Handler(void)
+// {
+//   /* Go to infinite loop when Hard Fault exception occurs */
+//   while (1)
+//   {
+//   }
+// }
 
 /**
   * @brief  This function handles Memory Manage exception.
@@ -132,20 +132,22 @@ void DebugMon_Handler(void)
   * @param  None
   * @retval None
   */
-void PendSV_Handler(void)
-{
-}
+// void PendSV_Handler(void)
+// {
+// }
 
 /**
   * @brief  This function handles SysTick Handler.
   * @param  None
   * @retval None
   */
-volatile uint32_t SystemClockMilliseconds = 0;
-void SysTick_Handler(void)
-{
-  SystemClockMilliseconds++;
-}
+// volatile uint32_t SystemClockMilliseconds = 0;
+// void SysTick_Handler(void)
+// {
+//     rt_os_tick_callback();
+// }
+
+
 void USART1_IRQHandler(void)
 {
     dl::DL_IT_invoke_callback_plus(USART1_IRQn);

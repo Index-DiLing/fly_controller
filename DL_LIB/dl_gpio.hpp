@@ -6,10 +6,6 @@
 
 namespace dl{
 
-
-
-
-
 class GPIO{
     GPIO_TypeDef* gpiox;
     uint32_t GPIO_Pin;
@@ -209,41 +205,32 @@ inline void GPIO_Pin_Init(dl::GPIO_Pin_Config pinConfig,GPIOMode_TypeDef mode,GP
 #define dPG13 dl::GPIO_Pin_Type{GPIOG,GPIO_Pin_13}
 #define dPG14 dl::GPIO_Pin_Type{GPIOG,GPIO_Pin_14}
 #define dPG15 dl::GPIO_Pin_Type{GPIOG,GPIO_Pin_15}
-
-
-
-
-
-
-
-
-
-#define dGPIOAPin0 dl::GPIO_Pin_Config{dPA0,GPIO_PinSource0,EXTI_Line0,EXTI_PortSourceGPIOA,EXTI0_IRQn}
-#define dGPIOAPin1 dl::GPIO_Pin_Config{dPA1,GPIO_PinSource1,EXTI_Line1,EXTI_PortSourceGPIOA,EXTI1_IRQn}
-#define dGPIOAPin2 dl::GPIO_Pin_Config{dPA2,GPIO_PinSource2,EXTI_Line2,EXTI_PortSourceGPIOA,EXTI2_IRQn}
-#define dGPIOAPin3 dl::GPIO_Pin_Config{dPA3,GPIO_PinSource3,EXTI_Line3,EXTI_PortSourceGPIOA,EXTI3_IRQn}
-#define dGPIOAPin4 dl::GPIO_Pin_Config{dPA4,GPIO_PinSource4,EXTI_Line4,EXTI_PortSourceGPIOA,EXTI4_IRQn}
-#define dGPIOAPin5 dl::GPIO_Pin_Config{dPA5,GPIO_PinSource5,EXTI_Line5,EXTI_PortSourceGPIOA,EXTI9_5_IRQn}
-#define dGPIOAPin6 dl::GPIO_Pin_Config{dPA6,GPIO_PinSource6,EXTI_Line6,EXTI_PortSourceGPIOA,EXTI9_5_IRQn}
-#define dGPIOAPin7 dl::GPIO_Pin_Config{dPA7,GPIO_PinSource7,EXTI_Line7,EXTI_PortSourceGPIOA,EXTI9_5_IRQn}
-#define dGPIOAPin8 dl::GPIO_Pin_Config{dPA8,GPIO_PinSource8,EXTI_Line8,EXTI_PortSourceGPIOA,EXTI9_5_IRQn}
-#define dGPIOAPin9 dl::GPIO_Pin_Config{dPA9,GPIO_PinSource9,EXTI_Line9,EXTI_PortSourceGPIOA,EXTI9_5_IRQn}
+#define dGPIOAPin0  dl::GPIO_Pin_Config{dPA0,GPIO_PinSource0,EXTI_Line0,EXTI_PortSourceGPIOA,EXTI0_IRQn}
+#define dGPIOAPin1  dl::GPIO_Pin_Config{dPA1,GPIO_PinSource1,EXTI_Line1,EXTI_PortSourceGPIOA,EXTI1_IRQn}
+#define dGPIOAPin2  dl::GPIO_Pin_Config{dPA2,GPIO_PinSource2,EXTI_Line2,EXTI_PortSourceGPIOA,EXTI2_IRQn}
+#define dGPIOAPin3  dl::GPIO_Pin_Config{dPA3,GPIO_PinSource3,EXTI_Line3,EXTI_PortSourceGPIOA,EXTI3_IRQn}
+#define dGPIOAPin4  dl::GPIO_Pin_Config{dPA4,GPIO_PinSource4,EXTI_Line4,EXTI_PortSourceGPIOA,EXTI4_IRQn}
+#define dGPIOAPin5  dl::GPIO_Pin_Config{dPA5,GPIO_PinSource5,EXTI_Line5,EXTI_PortSourceGPIOA,EXTI9_5_IRQn}
+#define dGPIOAPin6  dl::GPIO_Pin_Config{dPA6,GPIO_PinSource6,EXTI_Line6,EXTI_PortSourceGPIOA,EXTI9_5_IRQn}
+#define dGPIOAPin7  dl::GPIO_Pin_Config{dPA7,GPIO_PinSource7,EXTI_Line7,EXTI_PortSourceGPIOA,EXTI9_5_IRQn}
+#define dGPIOAPin8  dl::GPIO_Pin_Config{dPA8,GPIO_PinSource8,EXTI_Line8,EXTI_PortSourceGPIOA,EXTI9_5_IRQn}
+#define dGPIOAPin9  dl::GPIO_Pin_Config{dPA9,GPIO_PinSource9,EXTI_Line9,EXTI_PortSourceGPIOA,EXTI9_5_IRQn}
 #define dGPIOAPin10 dl::GPIO_Pin_Config{dPA10,GPIO_PinSource10,EXTI_Line10,EXTI_PortSourceGPIOA,EXTI15_10_IRQn}
 #define dGPIOAPin11 dl::GPIO_Pin_Config{dPA11,GPIO_PinSource11,EXTI_Line11,EXTI_PortSourceGPIOA,EXTI15_10_IRQn}
 #define dGPIOAPin12 dl::GPIO_Pin_Config{dPA12,GPIO_PinSource12,EXTI_Line12,EXTI_PortSourceGPIOA,EXTI15_10_IRQn}
 #define dGPIOAPin13 dl::GPIO_Pin_Config{dPA13,GPIO_PinSource13,EXTI_Line13,EXTI_PortSourceGPIOA,EXTI15_10_IRQn}
 #define dGPIOAPin14 dl::GPIO_Pin_Config{dPA14,GPIO_PinSource14,EXTI_Line14,EXTI_PortSourceGPIOA,EXTI15_10_IRQn}
 #define dGPIOAPin15 dl::GPIO_Pin_Config{dPA15,GPIO_PinSource15,EXTI_Line15,EXTI_PortSourceGPIOA,EXTI15_10_IRQn}
-#define dGPIOBPin0 dl::GPIO_Pin_Config{dPB0,GPIO_PinSource0,EXTI_Line0,EXTI_PortSourceGPIOB,EXTI0_IRQn}
-#define dGPIOBPin1 dl::GPIO_Pin_Config{dPB1,GPIO_PinSource1,EXTI_Line1,EXTI_PortSourceGPIOB,EXTI1_IRQn}
-#define dGPIOBPin2 dl::GPIO_Pin_Config{dPB2,GPIO_PinSource2,EXTI_Line2,EXTI_PortSourceGPIOB,EXTI2_IRQn}
-#define dGPIOBPin3 dl::GPIO_Pin_Config{dPB3,GPIO_PinSource3,EXTI_Line3,EXTI_PortSourceGPIOB,EXTI3_IRQn}
-#define dGPIOBPin4 dl::GPIO_Pin_Config{dPB4,GPIO_PinSource4,EXTI_Line4,EXTI_PortSourceGPIOB,EXTI4_IRQn}
-#define dGPIOBPin5 dl::GPIO_Pin_Config{dPB5,GPIO_PinSource5,EXTI_Line5,EXTI_PortSourceGPIOB,EXTI9_5_IRQn}
-#define dGPIOBPin6 dl::GPIO_Pin_Config{dPB6,GPIO_PinSource6,EXTI_Line6,EXTI_PortSourceGPIOB,EXTI9_5_IRQn}
-#define dGPIOBPin7 dl::GPIO_Pin_Config{dPB7,GPIO_PinSource7,EXTI_Line7,EXTI_PortSourceGPIOB,EXTI9_5_IRQn}
-#define dGPIOBPin8 dl::GPIO_Pin_Config{dPB8,GPIO_PinSource8,EXTI_Line8,EXTI_PortSourceGPIOB,EXTI9_5_IRQn}
-#define dGPIOBPin9 dl::GPIO_Pin_Config{dPB9,GPIO_PinSource9,EXTI_Line9,EXTI_PortSourceGPIOB,EXTI9_5_IRQn}
+#define dGPIOBPin0  dl::GPIO_Pin_Config{dPB0,GPIO_PinSource0,EXTI_Line0,EXTI_PortSourceGPIOB,EXTI0_IRQn}
+#define dGPIOBPin1  dl::GPIO_Pin_Config{dPB1,GPIO_PinSource1,EXTI_Line1,EXTI_PortSourceGPIOB,EXTI1_IRQn}
+#define dGPIOBPin2  dl::GPIO_Pin_Config{dPB2,GPIO_PinSource2,EXTI_Line2,EXTI_PortSourceGPIOB,EXTI2_IRQn}
+#define dGPIOBPin3  dl::GPIO_Pin_Config{dPB3,GPIO_PinSource3,EXTI_Line3,EXTI_PortSourceGPIOB,EXTI3_IRQn}
+#define dGPIOBPin4  dl::GPIO_Pin_Config{dPB4,GPIO_PinSource4,EXTI_Line4,EXTI_PortSourceGPIOB,EXTI4_IRQn}
+#define dGPIOBPin5  dl::GPIO_Pin_Config{dPB5,GPIO_PinSource5,EXTI_Line5,EXTI_PortSourceGPIOB,EXTI9_5_IRQn}
+#define dGPIOBPin6  dl::GPIO_Pin_Config{dPB6,GPIO_PinSource6,EXTI_Line6,EXTI_PortSourceGPIOB,EXTI9_5_IRQn}
+#define dGPIOBPin7  dl::GPIO_Pin_Config{dPB7,GPIO_PinSource7,EXTI_Line7,EXTI_PortSourceGPIOB,EXTI9_5_IRQn}
+#define dGPIOBPin8  dl::GPIO_Pin_Config{dPB8,GPIO_PinSource8,EXTI_Line8,EXTI_PortSourceGPIOB,EXTI9_5_IRQn}
+#define dGPIOBPin9  dl::GPIO_Pin_Config{dPB9,GPIO_PinSource9,EXTI_Line9,EXTI_PortSourceGPIOB,EXTI9_5_IRQn}
 #define dGPIOBPin10 dl::GPIO_Pin_Config{dPB10,GPIO_PinSource10,EXTI_Line10,EXTI_PortSourceGPIOB,EXTI15_10_IRQn}
 #define dGPIOBPin11 dl::GPIO_Pin_Config{dPB11,GPIO_PinSource11,EXTI_Line11,EXTI_PortSourceGPIOB,EXTI15_10_IRQn}
 #define dGPIOBPin12 dl::GPIO_Pin_Config{dPB12,GPIO_PinSource12,EXTI_Line12,EXTI_PortSourceGPIOB,EXTI15_10_IRQn}
