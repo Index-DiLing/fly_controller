@@ -1,5 +1,3 @@
-// For test SD
-
 #include "stm32f4xx.h"
 #include "dl_gpio.hpp"
 #include "dl_nvic_it.h"

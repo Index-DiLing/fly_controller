@@ -72,7 +72,7 @@ namespace dl
             uint16_t value2,
             uint16_t value3)
         {
-
+            while(exchangeData != 0);
             // 计算CCR
             uint16_t dshotData[4] = {
                 appendCCR4forValue(value0, false),
@@ -91,6 +91,7 @@ namespace dl
         }
         inline void encodePreLoadDshotData(uint16_t value[4])
         {
+            while(exchangeData != 0);
             uint16_t dshotData[4] = {
                 appendCCR4forValue(value[0], false),
                 appendCCR4forValue(value[1], false),
@@ -176,37 +177,29 @@ namespace dl
                 pwmDMA.setInterrupt([this](DMA_Stream_TypeDef *stream) {
                     // 1状态,尚未交换->半交换
                     if (exchangeData == 1) {
-                        for (uint8_t i = 0; i < 64; i++) {
-                            if (pwmDMA.isTransferingFirstBuffer()) {
-                                
-                                realTimeSecondData[i] = preLoadData[i];
-                            } else {
-                                
-                                realTimeData[i] = preLoadData[i];
-                            }
+                        if (pwmDMA.isTransferingFirstBuffer()) {
+                            for (uint8_t i = 0; i < 64; i++) realTimeSecondData[i] = preLoadData[i];
+
+                        } else {
+                            for (uint8_t i = 0; i < 64; i++) realTimeData[i] = preLoadData[i];
                         }
                         exchangeData = 2; // 2状态,半交换->全交换
-                    }
-                    if(exchangeData==2){
-                        //此时交换另一个缓冲区的数据
-                         for (uint8_t i = 0; i < 64; i++) {
-                            if (pwmDMA.isTransferingFirstBuffer()) {
-                                
-                                realTimeSecondData[i] = preLoadData[i];
-                            } else {
-                                
-                                realTimeData[i] = preLoadData[i];
-                            }
+                    }else if (exchangeData == 2) {
+                        // 此时交换另一个缓冲区的数据
+                        if (pwmDMA.isTransferingFirstBuffer()) {
+                            for (uint8_t i = 0; i < 64; i++) realTimeSecondData[i] = preLoadData[i];
+                        } else {
+
+                            for (uint8_t i = 0; i < 64; i++) realTimeData[i] = preLoadData[i];
                         }
                         exchangeData = 0;
                     }
-                    dl::delay_ticks(isStart ? startDelay : runningDelay);
+                    dl::delay_ticks(isStart? startDelay : runningDelay);
                     DMA_ClearITPendingBit(stream, DMA_IT_TCIF5);
-                },
-                                    DMA2_Stream5_IRQn, DMA_IT_TC, DMA_IT_TCIF5);
+                },DMA2_Stream5_IRQn, DMA_IT_TC, DMA_IT_TCIF5);
 
             } else {
-                
+                //00000000000000000010010110001111
             }
         }
 

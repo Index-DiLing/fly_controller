@@ -16,7 +16,7 @@ extern "C" {
 
 extern volatile uint32_t SystemClockMilliseconds;
 
-extern uint32_t globalErrorCode;
+// extern uint32_t globalErrorCode;
 
 /*=================================================================================================*/
 

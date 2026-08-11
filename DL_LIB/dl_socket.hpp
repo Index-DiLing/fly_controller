@@ -107,7 +107,7 @@ namespace dl
         }
         void sendData(ByteBuffer& buf)
         {
-            usart.send(buf.src,buf.length());
+            usart.send(buf.src,buf.used());
             buf.reset();
         }
         uint8_t read()

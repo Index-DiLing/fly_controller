@@ -5,6 +5,7 @@ deviceName: null
 packDir: .pack/Keil/STM32F4xx_DFP.2.17.0
 srcDirs:
   - DL_LIB
+  - rt-thread
 virtualFolder:
   name: <virtual_root>
   files: []
@@ -21,6 +22,7 @@ virtualFolder:
         - path: global.h
         - path: global.cpp
         - path: main_test.cpp
+        - path: main_test_basic.cpp
       folders: []
     - name: DOCS
       files: []
@@ -85,6 +87,7 @@ targets:
         - STM32F40_41xxx
         - USE_STDPERIPH_DRIVER
         - STM32F407xx
+        - RT_USING_NANO
       incList:
         - .
         - ../../STM32F407Files/STM32F4xx_DSP_StdPeriph_Lib_V1.9.0/Libraries/STM32F4xx_StdPeriph_Driver/inc
@@ -92,12 +95,16 @@ targets:
         - RTE/_FLY
         - ../../STM32F407Files/STM32F4xx_DSP_StdPeriph_Lib_V1.9.0/Libraries/CMSIS/Device/ST/STM32F4xx/Include
         - DL_LIB
+        - rt-thread/include
+        - rt-thread/bsp
       libList:
         - ../../STM32F407Files/STM32F4xx_DSP_StdPeriph_Lib_V1.9.0/Libraries/STM32F4xx_StdPeriph_Driver/src
+        - rt-thread/src
     excludeList:
       - <virtual_root>/STARTUP/startup_stm32f40xx.s
       - DL_LIB/FF16
       - <virtual_root>/USER/main.cpp
+      - <virtual_root>/USER/main_test.cpp
     settings:
       debugger: cortex-debug
     toolchain: AC6
