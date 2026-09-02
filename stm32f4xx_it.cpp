@@ -25,9 +25,7 @@
 #include "stm32f4xx.h"
 #include "rt-thread/include/rtthread.h"
 
-#include "dl_nvic_it.h"
-#include "global.h"
-#include "dl_gpio.hpp"
+#include "dlx_nvic_it.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -150,14 +148,52 @@ void DebugMon_Handler(void)
 
 void USART1_IRQHandler(void)
 {
-    dl::DL_IT_invoke_callback_plus(USART1_IRQn);
+    DLX_IT_invoke_callback(USART1_IRQn);
+}
+
+void USART3_IRQHandler(void)
+{
+    DLX_IT_invoke_callback(USART3_IRQn);
 }
 
 void DMA2_Stream5_IRQHandler(void)
 {
-    
-    
-    dl::DL_IT_invoke_callback_plus(DMA2_Stream5_IRQn);
+    DLX_IT_invoke_callback(DMA2_Stream5_IRQn);
+}
+
+void EXTI0_IRQHandler(void)
+{
+    DLX_IT_invoke_callback(EXTI0_IRQn);
+}
+
+void EXTI1_IRQHandler(void)
+{
+    DLX_IT_invoke_callback(EXTI1_IRQn);
+}
+
+void EXTI2_IRQHandler(void)
+{
+    DLX_IT_invoke_callback(EXTI2_IRQn);
+}
+
+void EXTI3_IRQHandler(void)
+{
+    DLX_IT_invoke_callback(EXTI3_IRQn);
+}
+
+void EXTI4_IRQHandler(void)
+{
+    DLX_IT_invoke_callback(EXTI4_IRQn);
+}
+
+void EXTI9_5_IRQHandler(void)
+{
+    DLX_IT_invoke_callback(EXTI9_5_IRQn);
+}
+
+void EXTI15_10_IRQHandler(void)
+{
+    DLX_IT_invoke_callback(EXTI15_10_IRQn);
 }
 
 

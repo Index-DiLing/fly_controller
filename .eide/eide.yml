@@ -23,6 +23,11 @@ virtualFolder:
         - path: global.cpp
         - path: main_test.cpp
         - path: main_test_basic.cpp
+        - path: main_dlx.cpp
+        - path: main_dshot.cpp
+        - path: main_kzb_esp.cpp
+        - path: main_kzb_flash.cpp
+        - path: main_connect.cpp
       folders: []
     - name: DOCS
       files: []
@@ -88,6 +93,7 @@ targets:
         - USE_STDPERIPH_DRIVER
         - STM32F407xx
         - RT_USING_NANO
+        - DLX_NVIC_PRIORITY_GROUP=0x500
       incList:
         - .
         - ../../STM32F407Files/STM32F4xx_DSP_StdPeriph_Lib_V1.9.0/Libraries/STM32F4xx_StdPeriph_Driver/inc
@@ -105,6 +111,16 @@ targets:
       - DL_LIB/FF16
       - <virtual_root>/USER/main.cpp
       - <virtual_root>/USER/main_test.cpp
+      - DL_LIB/mpu
+      - DL_LIB/SDIO
+      - DL_LIB/Fatfs
+      - <virtual_root>/USER/main_test_basic.cpp
+      - <virtual_root>/USER/main_dlx.cpp
+      - DL_LIB/flight_control/flight_control_test.cpp
+      - DL_LIB/old
+      - <virtual_root>/USER/main_dshot.cpp
+      - <virtual_root>/USER/main_kzb_esp.cpp
+      - <virtual_root>/USER/main_kzb_flash.cpp
     settings:
       debugger: cortex-debug
     toolchain: AC6
