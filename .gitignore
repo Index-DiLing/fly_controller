@@ -31,3 +31,14 @@ EventRecorderStub.scvd
 DL_LIB/old
 
 .vscode
+
+# local-only big/junk content (keep on disk, never track)
+/.eide/
+.pack/
+.cmsis/
+__pycache__/
+DL_LIB.zip
+global.h
+global.cpp
+FLIGHT_REPORT.md
+RTE_Components.h
