@@ -66,7 +66,7 @@ namespace dlx
          *  低4位 acc_odr: 0x5=12.5Hz, 0x6=25Hz, 0x7=50Hz, 0x8=100Hz,
          *                 0x9=200Hz, 0xA=400Hz, 0xB=800Hz, 0xC=1.6kHz
          */
-        AccConf      = 0xA9, ///< 100Hz + Normal 滤波(默认)
+        AccConf      = 0x8C, ///< 100Hz + Normal 滤波(默认)
 
         /** ACC_RANGE (0x41): 0x0=±3g, 0x1=±6g, 0x2=±12g, 0x3=±24g */
         AccRange     = 0x01, ///< ±6g(默认)
@@ -97,7 +97,7 @@ namespace dlx
          *  0x0=2000Hz/532Hz  0x1=2000Hz/230Hz  0x2=1000Hz/116Hz
          *  0x3=400Hz/47Hz    0x4=200Hz/23Hz    0x5=100Hz/12Hz
          *  0x6=200Hz/64Hz    0x7=100Hz/32Hz */
-        GyroBw       = 0x06, ///< 100Hz ODR / 12Hz 带宽(默认)
+        GyroBw       = 0x01, ///< 100Hz ODR / 12Hz 带宽(默认)
 
         /** GYRO_INT_CTRL (0x15): bit7=data_en, bit6=fifo_en */
         GyroIntCtrl  = 0x00, ///< 数据/中断全部禁用(默认)

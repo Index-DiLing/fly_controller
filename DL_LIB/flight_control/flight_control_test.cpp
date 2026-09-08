@@ -12,6 +12,7 @@
 //   5. 姿态跟踪: 期望 roll 阶跃后收敛;
 //   6. 垂向速度未提供时 (高度差分估计) 同样收敛;
 //   7. 扰动恢复与输入鲁棒性;
+//   7.5 仅角度环(ANGLE)模式: 高度环被跳过, 油门等于手动输入, 高度不再被定住;
 //   8. 垂向速度估计器: 气压高度 + 四元数 + IMU 融合 (悬停/爬升/倾角/毛刺/鲁棒性).
 //   9. 端到端定高: 控制器只拿到 气压+四元数+IMU, 由估计器提供垂向速度完成定高.
 //===================================================================================================
@@ -98,6 +99,29 @@ static void testMath()
         CHECK(near(v.z(), -1.0f, 1e-4f));
     }
 
+    // 欧拉角(ZYX) <-> 四元数 往返一致
+    {
+        const float yaw = 0.4f, pitch = -0.6f, roll = 0.3f;
+        const Quaternion q = dlx::quatFromEulerZYX(yaw, pitch, roll);
+        const Vector3f e = dlx::quatToEuler(q);
+        CHECK(near(e.x(), yaw, 1e-4f));
+        CHECK(near(e.y(), pitch, 1e-4f));
+        CHECK(near(e.z(), roll, 1e-4f));
+    }
+
+    // 与遥控端映射一致: yaw=0, pitch 绕 y, roll 绕 x (ZYX)
+    {
+        const float pitch = 20.0f * 3.14159265f / 180.0f;
+        const float roll = 15.0f * 3.14159265f / 180.0f;
+        const Quaternion q = dlx::quatFromEulerZYX(0.0f, pitch, roll);
+        const Quaternion q_manual = dlx::quatMul(
+            dlx::quatFromAxisAngle(Vector3f{0.0f, 1.0f, 0.0f}, pitch),
+            dlx::quatFromAxisAngle(Vector3f{1.0f, 0.0f, 0.0f}, roll));
+        for (int i = 0; i < 4; i++) {
+            CHECK(near(q.data[i], q_manual.data[i], 1e-5f));
+        }
+    }
+
     std::printf("[math] done\n");
 }
 
@@ -154,6 +178,15 @@ static void testMixer()
         }
         CHECK(std::fabs(sum - 4.0f * 0.9f) < 1e-4f); // 总油门守恒
         CHECK(mo.mix_scale < 1.0f);                    // 确实发生了收缩
+    }
+
+    // 零油门 + 大力矩: 混控器应输出全 0 (推力优先, 无基础油门就无法做差动, 力矩被缩放为 0)
+    out.throttle = 0.0f;
+    out.torque = Vector3f{0.05f, 0.0f, 0.0f};
+    {
+        const dlx::FlightControlMotorOutput mo = dlx::mixMotors(out, p);
+        CHECK(mo.motor[0] == 0.0f && mo.motor[1] == 0.0f && mo.motor[2] == 0.0f && mo.motor[3] == 0.0f);
+        CHECK(mo.mix_scale == 0.0f);
     }
 
     std::printf("[mixer] done\n");
@@ -281,8 +314,10 @@ static void runHoverSim(bool use_vz)
             st.vertical_velocity_valid = false;
             st.vertical_velocity_mps = 0.0f;
         }
-        const float throttle = fc.update(sp, st, dt);
-        const FlightControlOutput &out = fc.lastOutput();
+        FlightControlOutput out;
+        out.throttle = 0.0f; // 定高模式下被高度环覆写, 这里仅为占位
+        fc.updateAngleHeight(sp, st, dt, out);
+        const float throttle = out.throttle;
         const dlx::FlightControlMotorOutput motors = dlx::mixMotors(out, fc.params());
         sim.step(out, fc.params(), dt);
 
@@ -331,9 +366,12 @@ static void runYawIgnoreTest()
     const float dt = 0.002f;
     const int steps = static_cast<int>(5.0f / dt);
     for (int i = 0; i < steps; i++) {
-        const float throttle = fc.update(sp, sim.state(), dt);
+        FlightControlOutput out;
+        out.throttle = 0.0f;
+        fc.updateAngleHeight(sp, sim.state(), dt, out);
+        const float throttle = out.throttle;
         (void)throttle;
-        sim.step(fc.lastOutput(), fc.params(), dt);
+        sim.step(out, fc.params(), dt);
     }
 
     const Vector3f eul = dlx::quatToEuler(sim.q);
@@ -362,8 +400,10 @@ static void runStepTrackingTest()
         if (i == step_at) {
             sp.attitude = dlx::quatFromAxisAngle(Vector3f{1.0f, 0.0f, 0.0f}, 30.0f * 3.14159265f / 180.0f);
         }
-        fc.update(sp, sim.state(), dt);
-        sim.step(fc.lastOutput(), fc.params(), dt);
+        FlightControlOutput out;
+        out.throttle = 0.0f;
+        fc.updateAngleHeight(sp, sim.state(), dt, out);
+        sim.step(out, fc.params(), dt);
     }
 
     const Vector3f eul = dlx::quatToEuler(sim.q);
@@ -391,7 +431,10 @@ static void runDisturbanceTest()
     float max_throttle = 0.0f;
 
     for (int i = 0; i < steps; i++) {
-        const float throttle = fc.update(sp, sim.state(), dt);
+        FlightControlOutput out;
+        out.throttle = 0.0f;
+        fc.updateAngleHeight(sp, sim.state(), dt, out);
+        const float throttle = out.throttle;
         min_throttle = min_throttle < throttle ? min_throttle : throttle;
         max_throttle = max_throttle > throttle ? max_throttle : throttle;
 
@@ -399,7 +442,7 @@ static void runDisturbanceTest()
             sim.w.x() += 6.0f; // roll 角速度冲击 ~6 rad/s
             sim.w.y() -= 4.0f;
         }
-        sim.step(fc.lastOutput(), fc.params(), dt);
+        sim.step(out, fc.params(), dt);
     }
 
     const Vector3f eul = dlx::quatToEuler(sim.q);
@@ -411,6 +454,55 @@ static void runDisturbanceTest()
     CHECK(dlx::norm(sim.w) < 0.2f);
     CHECK(min_throttle >= 0.0f);
     CHECK(max_throttle <= 1.0f);
+}
+
+//===================================================================================================
+// 6.5 仅角度环(ANGLE)模式: 高度环被跳过, 油门直接等于外部手动输入, 高度不再被定住
+//===================================================================================================
+static void runAngleOnlyTest()
+{
+    FlightController fc;
+    QuadSim sim(fc.params());
+
+    // 初始水平, 但高度有较大偏差 (验证角度模式忽略高度误差)
+    sim.q = dlx::quatIdentity();
+    sim.h = 5.0f;
+
+    FlightControlSetpoint sp;
+    sp.attitude = dlx::quatFromAxisAngle(Vector3f{1.0f, 0.0f, 0.0f},
+                                         20.0f * 3.14159265f / 180.0f); // 期望 20° roll
+    sp.height_m = 1.0f;  // 定高目标 (应在 ANGLE 模式被忽略)
+    const float manual_throttle = 0.5f; // 手动油门指令 (直通输出)
+
+    const float dt = 0.002f;
+    const int steps = static_cast<int>(6.0f / dt);
+    bool throttle_exact = true;
+    bool nan_detected = false;
+
+    for (int i = 0; i < steps; i++) {
+        FlightControlOutput out;
+        out.throttle = manual_throttle; // 手动油门直接放在输出上 (仅角度环模式)
+        fc.updateAngle(sp, sim.state(), dt, out);
+        const float throttle = out.throttle;
+        // 角度环模式下油门应当始终等于手动输入 (不随高度误差变化)
+        if (std::fabs(throttle - manual_throttle) > 1e-4f) {
+            throttle_exact = false;
+        }
+        if (!std::isfinite(throttle)) {
+            nan_detected = true;
+        }
+        sim.step(out, fc.params(), dt);
+    }
+
+    const Vector3f eul = dlx::quatToEuler(sim.q);
+    std::printf("  angle-only: roll=%.2f pitch=%.2f h=%.3f |w|=%.3f (thr=%.3f)\n",
+                eul.z() * 57.29578f, eul.y() * 57.29578f, sim.h, dlx::norm(sim.w), manual_throttle);
+
+    CHECK(throttle_exact);                      // 油门直接等于手动输入, 不受高度误差影响
+    CHECK(!nan_detected);
+    CHECK(std::fabs(eul.z() * 57.29578f - 20.0f) < 2.0f); // 倾角仍收敛到期望
+    CHECK(dlx::norm(sim.w) < 0.2f);             // 转动收敛 (不再晃动)
+    CHECK(std::fabs(sim.h - 1.0f) > 0.3f);      // 高度不再被定在 1.0m (手动油门 0.5 > 悬停)
 }
 
 //===================================================================================================
@@ -461,11 +553,14 @@ static void runHoverSimWithEstimator()
         st.vertical_velocity_mps = e.vertical_velocity_mps;
         st.vertical_velocity_valid = e.valid;
 
-        const float throttle = fc.update(sp, st, dt);
+        FlightControlOutput out;
+        out.throttle = 0.0f;
+        fc.updateAngleHeight(sp, st, dt, out);
+        const float throttle = out.throttle;
         if (!std::isfinite(throttle) || !std::isfinite(e.height_m) || !std::isfinite(e.vertical_velocity_mps)) {
             nan_detected = true;
         }
-        sim.step(fc.lastOutput(), fc.params(), dt);
+        sim.step(out, fc.params(), dt);
 
         if (i % 1000 == 0) {
             std::printf("  t=%5.1fs h_true=%6.3f h_est=%6.3f vz_est=%6.3f thr=%5.3f\n",
@@ -498,21 +593,29 @@ static void runRobustnessTest()
     st.body_rate.data[0] = st.body_rate.data[1] = st.body_rate.data[2] = 0.0f;
     st.vertical_velocity_valid = false;
 
+    FlightControlOutput out;
+    out.throttle = 0.0f;
+
     // 非法 dt (0 与 NaN)
-    float thr0 = fc.update(sp, st, 0.0f);
-    float thrNaN = fc.update(sp, st, 0.0f / 0.0f);
+    fc.updateAngleHeight(sp, st, 0.0f, out);
+    float thr0 = out.throttle;
+    fc.updateAngleHeight(sp, st, 0.0f / 0.0f, out);
+    float thrNaN = out.throttle;
     CHECK(std::isfinite(thr0));
     CHECK(std::isfinite(thrNaN));
+    CHECK(std::isfinite(out.torque.x()) && std::isfinite(out.torque.y()) && std::isfinite(out.torque.z()));
 
     // 全零四元数 (视为无效 -> 归一化为单位四元数)
     st.attitude = Quaternion{{0.0f, 0.0f, 0.0f, 0.0f}};
-    float thrBad = fc.update(sp, st, 0.002f);
+    fc.updateAngleHeight(sp, st, 0.002f, out);
+    float thrBad = out.throttle;
     CHECK(std::isfinite(thrBad));
 
     // 异常大角速度不应导致 NaN
     st.attitude = dlx::quatIdentity();
     st.body_rate.data[0] = 1e6f;
-    float thrHuge = fc.update(sp, st, 0.002f);
+    fc.updateAngleHeight(sp, st, 0.002f, out);
+    float thrHuge = out.throttle;
     CHECK(std::isfinite(thrHuge));
 
     std::printf("  robustness OK (thr0=%.3f thrNaN=%.3f thrBad=%.3f thrHuge=%.3f)\n",
@@ -711,6 +814,9 @@ int main()
 
     std::printf("== disturbance recovery test ==\n");
     runDisturbanceTest();
+
+    std::printf("== angle-only mode test ==\n");
+    runAngleOnlyTest();
 
     std::printf("== robustness test ==\n");
     runRobustnessTest();

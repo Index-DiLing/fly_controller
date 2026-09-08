@@ -9,13 +9,14 @@ namespace dlx
     //   NRF24L01_MODE_HALF_IRQ  半中断:   IRQ 中断只置标志, 主程序处理 SPI
     //   NRF24L01_MODE_POLLING   纯轮询:   不使用外部中断, 主程序轮询 STATUS
     //
-    // 当前测试启用 HALF_IRQ: ISR 只置标志, SPI 全部在主循环里串行执行,
-    // 避免中断与主循环在同一个 SPI 上重入. 切换方式: 注释/取消注释下面的宏,
-    // 或编译器预定义 -DNRF24L01_MODE_POLLING 之类(与文件内重复定义会报错,
-    // 因此命令行方式需先注释掉文件内的 HALF_IRQ).
+    // 当前测试启用 POLLING: 不使用外部中断, read()/write() 直接轮询 STATUS.
+    // 与遥控器端(同样是轮询收)保持一致, 也避免 NRF IRQ 电平与 EXTI 边沿
+    // 交互导致 TX_DS 漏检. 切换方式: 注释/取消注释下面的宏, 或编译器预定义
+    // -DNRF24L01_MODE_FULL_IRQ 之类(与文件内重复定义会报错, 因此命令行
+    // 方式需先注释掉文件内的 POLLING).
     // ==================================================================
 #if !defined(NRF24L01_MODE_FULL_IRQ) && !defined(NRF24L01_MODE_HALF_IRQ) && !defined(NRF24L01_MODE_POLLING)
-#define NRF24L01_MODE_HALF_IRQ
+#define NRF24L01_MODE_POLLING
 #endif
 
 #if (((defined(NRF24L01_MODE_FULL_IRQ) ? 1 : 0)) + \
@@ -97,8 +98,8 @@ namespace dlx
     /** CONFIG: EN_CRC | PWR_UP(PRIM_RX=0 即 PTX), 即 0x0A */
     constexpr uint8_t NRF24L01_CONFIG_TX = 0x0A;
 
-    /** EN_AA: 通道0 自动应答(与遥控器端对齐, 增强冲激) */
-    constexpr uint8_t NRF24L01_EN_AA = 0x01;
+    /** EN_AA: 关闭自动应答(与遥控器端对齐, 简单收发, 绕开克隆芯片的 ACK 问题) */
+    constexpr uint8_t NRF24L01_EN_AA = 0x00;
 
     /** EN_RXADDR: 只使能数据管道 0(仅配置了 P0) */
     constexpr uint8_t NRF24L01_EN_RXADDR = 0x01;
@@ -106,14 +107,14 @@ namespace dlx
     /** SETUP_AW: 5 字节地址(与 5 字节 TX/RX 地址配套) */
     constexpr uint8_t NRF24L01_SETUP_AW = 0x03;
 
-    /** SETUP_RETR: 500us 间隔 + 5 次重发(与遥控器端对齐) */
-    constexpr uint8_t NRF24L01_SETUP_RETR = 0x15;
+    /** SETUP_RETR: 无自动应答, 不重发 */
+    constexpr uint8_t NRF24L01_SETUP_RETR = 0x00;
 
     /** RF_CH: 信道 40 -> 2.440GHz(收发双方必须一致) */
     constexpr uint8_t NRF24L01_RF_CH = 40;
 
-    /** RF_SETUP: 2Mbps(RF_DR=1) + 0dBm(RF_PWR=11) + LNA 高增益, 与旧驱动 0x0F 一致 */
-    constexpr uint8_t NRF24L01_RF_SETUP = 0x0F;
+    /** RF_SETUP: 1Mbps(RF_DR=0) + 0dBm(RF_PWR=11) + LNA 高增益, 与遥控器端一致 */
+    constexpr uint8_t NRF24L01_RF_SETUP = 0x07;
 
     /** RX 载荷宽度(RX_PW_P0), 1~32; read() 默认按这个长度读一整包 */
     constexpr uint8_t NRF24L01_RX_PACKET_SIZE = 32;

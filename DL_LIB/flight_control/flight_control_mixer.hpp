@@ -9,12 +9,14 @@
 //
 // 原理 (X 布局, 机体系 x 前 / y 左 / z 上):
 //   - 总油门: 四个电机共同承担;
-//   - roll  力矩: 左(M0,M3) 与右(M1,M2) 差动;
-//   - pitch 力矩: 前(M0,M1) 与后(M2,M3) 差动;
+//   - roll  力矩: 左(M0,M3) 与右(M1,M2) 差动, 力臂 = 横向偏移 ARM_LATERAL_M;
+//   - pitch 力矩: 前(M0,M1) 与后(M2,M3) 差动, 力臂 = 纵向偏移 ARM_FORWARD_M;
 //   - yaw   力矩: 顺时针(M0,M2) 与逆时针(M1,M3) 差动 (旋翼反力矩).
 //   差动量由几何关系换算: 单电机油门单位推力 k = (m*g/hover)/4,
-//     roll/pitch 满差动对应的力矩 = 2*sqrt(2)*L*k,
-//     yaw     满差动对应的力矩 = 4*YAW_TORQUE_ARM_M*k.
+//     roll  满差动对应的力矩 = 4*ARM_LATERAL_M*k,
+//     pitch 满差动对应的力矩 = 4*ARM_FORWARD_M*k,
+//     yaw   满差动对应的力矩 = 4*YAW_TORQUE_ARM_M*k.
+//   矩形 X 布局: 前后/左右臂长不同时用 ARM_FORWARD_M/ARM_LATERAL_M 分别换算; 正方形时两者相等.
 //
 // 饱和处理: 推力优先. 当差动导致某个电机越界时, 按比例收缩三轴差动,
 //   保证总油门不变 (牺牲力矩而不是推力).
@@ -34,17 +36,20 @@ namespace dlx
     {
         FlightControlMotorOutput res;
 
-        const float L = params.get(FlightParamId::ARM_LENGTH_M);
         const float mass = params.get(FlightParamId::MASS_KG);
         const float hover = params.get(FlightParamId::HOVER_THROTTLE);
         const float yaw_arm = params.get(FlightParamId::YAW_TORQUE_ARM_M);
+        // 矩形 X 布局: 前后偏移(ARM_FORWARD_M, roll 用横向)与左右偏移(ARM_LATERAL_M, pitch 用纵向)
+        const float arm_f = params.get(FlightParamId::ARM_FORWARD_M); // 纵向 x 偏移
+        const float arm_l = params.get(FlightParamId::ARM_LATERAL_M); // 横向 y 偏移
 
         // 单电机油门单位推力 [N]
         const float k = (mass * 9.80665f / hover) / 4.0f;
 
         // 力矩 -> 每个电机的差动油门量 (正 = 增加油门)
-        const float roll_d = out.torque.x() / (2.0f * 1.41421356f * L * k);
-        const float pitch_d = out.torque.y() / (2.0f * 1.41421356f * L * k);
+        //   滚转力臂 = 横向偏移 arm_l; 俯仰力臂 = 纵向偏移 arm_f
+        const float roll_d = out.torque.x() / (4.0f * arm_l * k);
+        const float pitch_d = out.torque.y() / (4.0f * arm_f * k);
         const float yaw_d = out.torque.z() / (4.0f * yaw_arm * k);
 
         const float T = out.throttle;

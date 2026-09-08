@@ -167,9 +167,17 @@ namespace dlx
             dataTransferDMA.start();
         }
 
+        // 直接覆盖油门并重新编码; 不做 while(transferStatus!=0) 阻塞等待.
+        // 原因: transferStatus 只能靠 DMA TC 中断递减; 若 DMA 未启动(未解锁/加锁后),
+        // 该值会卡在非零导致死等. 改为"最新值优先": 无论上次是否同步完, 本轮都直接写入,
+        // 由 TC 中断"陆续"把最新帧同步进空闲缓冲. 潜在代价是极小概率的一次撕裂帧
+        // (中断正在 memcpy 时被覆盖), 对 DShot 仅表现为该帧校验失败被丢弃, 不影响稳定.
+
+        //后来还是加上防撕裂了
+
         void preloadThrottle(uint16_t value0, uint16_t value1, uint16_t value2, uint16_t value3)
         {
-            while (transferStatus != 0); // 等上一次同步完成再覆盖暂存区
+            while (transferStatus != 0);
             throttle[0]    = value0;
             throttle[1]    = value1;
             throttle[2]    = value2;
@@ -180,7 +188,7 @@ namespace dlx
         // 外部需要保证传入的value是4个
         void preloadThrottle(uint16_t value[])
         {
-            while (transferStatus != 0); // 等上一次同步完成再覆盖暂存区
+            while (transferStatus != 0);
             throttle[0]    = value[0];
             throttle[1]    = value[1];
             throttle[2]    = value[2];

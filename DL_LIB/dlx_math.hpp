@@ -312,6 +312,17 @@ namespace dlx
         }
     }
 
+    // 欧拉角 (ZYX: yaw, pitch, roll) [rad] -> 四元数. 与 quatToEuler 互为逆.
+    // 机体系约定: x 前, y 左, z 上 (右手系); 旋转顺序 R = Rz(yaw) * Ry(pitch) * Rx(roll).
+    // 其中 yaw 绕 z 轴, pitch 绕 y 轴, roll 绕 x 轴. 由 quatFromAxisAngle + quatMul 组合实现.
+    inline Quaternion quatFromEulerZYX(float yaw, float pitch, float roll)
+    {
+        const Quaternion qz = quatFromAxisAngle(Vector3f{0.0f, 0.0f, 1.0f}, yaw);
+        const Quaternion qy = quatFromAxisAngle(Vector3f{0.0f, 1.0f, 0.0f}, pitch);
+        const Quaternion qx = quatFromAxisAngle(Vector3f{1.0f, 0.0f, 0.0f}, roll);
+        return quatMul(qz, quatMul(qy, qx)); // = Rz * Ry * Rx
+    }
+
     // 四元数 -> 欧拉角 (ZYX: yaw, pitch, roll) [rad]
     inline Vector3f quatToEuler(const Quaternion &q)
     {

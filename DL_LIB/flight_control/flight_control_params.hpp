@@ -35,7 +35,7 @@ namespace dlx
     enum class RotorDirection : uint8_t
     {
         CW = 0,  // 顺时针
-        CCW = 1, // 逆时针
+        CCW = 1, // 逆时针 
     };
 
     // 机臂方向 (机体系归一化单位向量, 乘以 ARM_LENGTH_M 得到电机位置 [m])
@@ -114,42 +114,46 @@ namespace dlx
         VZ_MAX_DOWN,   // 最大下降速度 (正值) [m/s]
         VZ_EST_TAU_S,  // 垂向速度估计低通时间常数 [s]
 
+        // ---- 机臂几何 (矩形 X 布局: 前后/左右臂长可不同) ----
+        ARM_FORWARD_M,   // 每个电机到中心的纵向(前后)偏移 [m]
+        ARM_LATERAL_M,   // 每个电机到中心的横向(左右)偏移 [m]
+
         COUNT,
     };
 
     // 参数默认值表, 与 FlightParamId 顺序一一对应
     static constexpr float kFlightControlParamDefaults[static_cast<size_t>(FlightParamId::COUNT)] = {
         0.125f, // ARM_LENGTH_M
-        0.45f,  // MASS_KG
-        0.004f, // INERTIA_XX
-        0.004f, // INERTIA_YY
-        0.007f, // INERTIA_ZZ
+        1.566f, // MASS_KG: 电机600g + 机架250g + 电池716g
+        0.0234f, // INERTIA_XX: 4×150g 电机@长边半距 + 250g 机架细杆 + 716g 电池@z=5cm, 折算到重心
+        0.0124f, // INERTIA_YY
+        0.0338f, // INERTIA_ZZ
         0.03f,  // YAW_TORQUE_ARM_M
-        0.45f,  // HOVER_THROTTLE
+        0.30f,  // HOVER_THROTTLE: 估测悬停(1.566kg -> 每电机~391g, 由 40%/20% 推力点拟合)
         0.05f,  // THROTTLE_MIN
         1.0f,   // THROTTLE_MAX
-        0.6f,   // TILT_MAX_RAD (~34°)
-        7.0f,   // ATT_ROLL_P
-        7.0f,   // ATT_PITCH_P
+        0.35f,  // TILT_MAX_RAD (~20°, 首飞保守)
+        3.0f,   // ATT_ROLL_P (首飞保守)
+        3.0f,   // ATT_PITCH_P
         3.0f,   // ATT_YAW_P
         0.0f,   // ATT_YAW_WEIGHT
-        6.0f,   // RATE_ROLL_MAX
-        6.0f,   // RATE_PITCH_MAX
-        3.0f,   // RATE_YAW_MAX
-        20.0f,  // RATE_ROLL_P
-        5.0f,   // RATE_ROLL_I
-        0.02f,  // RATE_ROLL_D
-        20.0f,  // RATE_PITCH_P
-        5.0f,   // RATE_PITCH_I
-        0.02f,  // RATE_PITCH_D
-        15.0f,  // RATE_YAW_P
-        3.0f,   // RATE_YAW_I
+        2.0f,   // RATE_ROLL_MAX (~114°/s)
+        2.0f,   // RATE_PITCH_MAX
+        1.0f,   // RATE_YAW_MAX (~57°/s)
+        8.0f,   // RATE_ROLL_P (首飞保守)
+        2.0f,   // RATE_ROLL_I
+        0.015f, // RATE_ROLL_D
+        8.0f,   // RATE_PITCH_P
+        2.0f,   // RATE_PITCH_I
+        0.015f, // RATE_PITCH_D
+        5.0f,   // RATE_YAW_P
+        1.0f,   // RATE_YAW_I
         0.01f,  // RATE_YAW_D
         0.0f,   // RATE_ROLL_FF
         0.0f,   // RATE_PITCH_FF
         0.0f,   // RATE_YAW_FF
-        120.0f, // ANGACC_MAX
-        10.0f,  // RATE_INT_LIMIT
+        40.0f,  // ANGACC_MAX (限角加速度, 防首飞过冲)
+        5.0f,   // RATE_INT_LIMIT
         0.01f,  // RATE_D_TAU_S
         2.0f,   // POS_Z_P
         3.5f,   // VEL_Z_P
@@ -157,6 +161,8 @@ namespace dlx
         1.5f,   // VZ_MAX_UP
         0.8f,   // VZ_MAX_DOWN
         0.25f,  // VZ_EST_TAU_S
+        0.12933f, // ARM_FORWARD_M: 前向(短边)半距. 由对角轴距445mm 与 长:短=1.4:1 反推
+        0.18106f, // ARM_LATERAL_M: 横向(长边)半距. = 1.4 * ARM_FORWARD_M
     };
 
     //================================================================================================

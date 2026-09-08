@@ -65,7 +65,7 @@ int main()
 
     auto spi = SPI::SPI1_SA5_MIA6_MOA7(GPIOProfile::A3);
 
-    spi.init(SPIModeProfile::FD_M_8B_CH_2E_NS_BR256_MSB);
+    spi.init(SPIModeProfile::FD_M_8B_CH_2E_NS_BR16_MSB);
 
     auto bmi = BMI088(spi, GPIOProfile::BC, GPIOProfile::BD);
 
@@ -73,7 +73,8 @@ int main()
 
     auto mutex = rt_sem_create("sensor", 0, RT_IPC_FLAG_PRIO);
 
-    auto timer = rt_timer_create("imut", +[](void *mut) { rt_sem_release(static_cast<rt_sem_t>(mut)); }, mutex, 50, RT_TIMER_FLAG_HARD_TIMER | RT_TIMER_FLAG_PERIODIC);
+    // 十倍降采样,10ms触发一次,每次预期收到16x加速度计 + 20x陀螺仪数据
+    auto timer = rt_timer_create("imut", +[](void *mut) { rt_sem_release(static_cast<rt_sem_t>(mut)); }, mutex, 10, RT_TIMER_FLAG_HARD_TIMER | RT_TIMER_FLAG_PERIODIC);
 
     uint8_t acbb[256];
     uint8_t gybb[256];
@@ -89,19 +90,19 @@ int main()
 
     auto serialDMA = usart1.setDMASend(dmaBuffer);
 
-    MadgwickAHRS ahrs(200,0.078);
+    // 设置AHRS解算频率2000Hz,对齐到加陀螺仪
+    MadgwickAHRS ahrs(2000, 0.078);
 
     // ------------------------------------------------------------------
-    // NRF24L01 链路(新增): SPI3 挂 PC10(SCK)/PC11(MISO)/PC12(MOSI),
-    // CSN = PA4(软件片选), CE = PC7, IRQ = PC8.
-    // 本端参数已与遥控器端对齐(见 dlx_nrf24l01_config.h):
-    //   信道 40 / 2Mbps+0dBm+LNA / 通道0 自动应答 / 500us+5 次重发 / 32B 载荷 / 4ms 超时.
-    // SPI 使用模式 0(CPOL=0, CPHA=0), MSB 在前.
+    // NRF24L01 链路: SPI3 挂 PC10(SCK)/PC11(MISO)/PC12(MOSI),
+    // CSN = PA4(软件片选), CE = PC7, IRQ = PC8(轮询模式, 不必接).
+    // 参数已与遥控器端对齐(见 dlx_nrf24l01_config.h):
+    //   信道 40 / 1Mbps+0dBm+LNA / 无自动应答 / 32B 载荷 / 4ms 超时.
     // ------------------------------------------------------------------
     auto spi3 = SPI::SPI3_SCA_MICB_MOCC(GPIOProfile::A4);
-    spi3.init(SPIModeProfile::FD_M_8B_CL_1E_NS_BR8_MSB);
+    spi3.init(SPIModeProfile::FD_M_8B_CL_1E_NS_BR32_MSB);
 
-    uint8_t nrfRxRaw[128];                       // NRF 接收环形缓冲(可容约 4 包)
+    uint8_t nrfRxRaw[128]; // NRF 接收环形缓冲(可容约 4 包)
     ByteBuffer nrfRxByteBuf(nrfRxRaw, sizeof(nrfRxRaw));
     NRF24L01 nrf(spi3, GPIOProfile::C7, GPIOProfile::C8, nrfRxByteBuf);
     nrf.init();
@@ -112,7 +113,7 @@ int main()
     DLX_ProtocolBuffer nrfTxProtocol(nrfTxByteBuf);
 
     // 下行(收)进行 DLX 解析: 收到 ControlToFlight -> 触发回调
-    uint8_t nrfDummyRaw[64];                     // CPU 不复用, 仅占位 buffer 成员
+    uint8_t nrfDummyRaw[64]; // 仅占位 buffer 成员, check() 不复用它
     ByteBuffer nrfDummyByteBuf(nrfDummyRaw, sizeof(nrfDummyRaw));
     uint8_t nrfFrRaw[32];
     ByteBuffer nrfFrame(nrfFrRaw, sizeof(nrfFrRaw));
@@ -121,22 +122,16 @@ int main()
     RingByteBuffer nrfRing(nrfRingBuf);
     DLX_ProtocolBuffer nrfRxProtocol(nrfDummyByteBuf, &nrfRing, &nrfFrame);
 
-    // 遥控器控制数据暂不参与控制, 仅用 PF5 灯指示"收到一帧控制数据".
-    GPIO ledPF5(GPIOProfile::F5);
-    ledPF5.init(GPIOModeProfile::OUT_PP_NOPULL_50MHz);
-    ledPF5 = 0;
-    // PF4 灯指示"已向遥控器回传一帧姿态".
-    GPIO ledPF4(GPIOProfile::F4);
-    ledPF4.init(GPIOModeProfile::OUT_PP_NOPULL_50MHz);
-    ledPF4 = 0;
+
+    
+
+    // 遥控器控制数据暂不参与控制, 回调先留空; 需要时在此读 ctl->targetPitch() 等.
     nrfRxProtocol.setControlToFlightCallbackFunction(
         +[](ControlToFlight *ctl, void *ctx) {
-            // 需要解算时可用 ctl->targetPitch()/targetRoll()/throttle() 等字段
-            static bool on = false;
-            on = !on;
-            *static_cast<GPIO *>(ctx) = on;
+            (void)ctl;
+            (void)ctx;
         },
-        &ledPF5);
+        nullptr);
 
     rt_timer_start(timer);
     while (true) {
@@ -145,23 +140,32 @@ int main()
         bmi.fifoRead(ac, gy);
         dmaBuffer.reset();
         auto l = fixed_sprintf("size:%u,%u", ac.size(), gy.size());
-        
-        while (ac.size() > 0 && gy.size()>0)
-        {
-            AccelerometerRaw acr;
-            ac.pop(acr);
 
-            // protocol.AccelRawW(acr.data);
+        // 偷懒的做法:对齐陀螺仪,选择最近的加速度计数据
+        uint8_t gySize = gy.size();
+        uint8_t acSize = ac.size();
+        AccelerometerRaw acr;
+        uint8_t gyCnt = 0;
+        uint8_t nearestAC = 0;
+        
+        if(!ac.pop(acr)){
+            gy.clear();
+            continue;
+        }
+        while (gy.size() > 0) {
+            //要求acSize<gySize;
+            if ((gyCnt * acSize + gySize / 2) / gySize > nearestAC) {
+                ac.pop(acr);
+                nearestAC++;
+            }
 
             GyroscopeRaw gyr;
             gy.pop(gyr);
 
-            // protocol.GyroRawW(gyr.data);
-            
             ahrs.MadgwickAHRSupdateIMU(StandardIMUGRads{
                 .accel = BMI088::getAccelerationG(acr),
-                .gyro = BMI088::getAngularVelocityRads(gyr)
-            });
+                .gyro  = BMI088::getAngularVelocityRads(gyr)});
+            gyCnt++;
         }
         ac.clear();
         gy.clear();
@@ -171,16 +175,12 @@ int main()
         nrfTxByteBuf.reset();
         if (nrfTxProtocol.FlightCoreStatusW(
                 quat.data[0], quat.data[1], quat.data[2], quat.data[3],
-                0, 0, 0, 0,          // motor0..3(本测试未驱动电机)
-                0.0f,                // height(本测试未估计高度)
-                0)) {                // error
-            // 阻塞等待发送完成(自动应答), 之后再回到接收模式
-            if (nrf.write(nrfTxByteBuf.src, nrfTxByteBuf.used(),
-                          NRF24L01_WAIT_TIMEOUT_MS)) {
-                static bool txOn = false;
-                txOn = !txOn;
-                ledPF4 = txOn;
-            }
+                0, 0, 0, 0, // motor0..3(本测试未驱动电机)
+                0.0f,       // height(本测试未估计高度)
+                0)) {       // error
+            // 发送并回到接收模式
+            nrf.write(nrfTxByteBuf.src, nrfTxByteBuf.used(),
+                      NRF24L01_WAIT_TIMEOUT_MS);
         }
 
         // ---- 通过 NRF 接收遥控器控制帧(ControlToFlight, 类型 9) ----
@@ -197,13 +197,13 @@ int main()
         }
         while (nrfRing.available() >= NRF24L01_RX_PACKET_SIZE) {
             const uint16_t before = nrfRing.available();
-            bool consumed = nrfRxProtocol.check(); // 命中后调用 ControlToFlight 回调
+            bool consumed         = nrfRxProtocol.check(); // 命中后调用 ControlToFlight 回调
             if (!consumed && nrfRing.available() == before) {
                 // 无法解析(未知帧类型)且未被 check() 消费: 整包丢弃, 保持 32B 对齐
                 nrfRing.read(nrfPkt, NRF24L01_RX_PACKET_SIZE);
             }
         }
-        
+
         protocol.SimpleLogW(gfsb);
         protocol.QuatW(ahrs.getQuaternion().data);
 
@@ -213,7 +213,6 @@ int main()
 
         serialDMA.wait();
     }
-
 
     while (true) {
         serialDMA.start();
