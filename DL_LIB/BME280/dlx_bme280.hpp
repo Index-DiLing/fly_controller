@@ -58,6 +58,7 @@ namespace dlx
         {
             uint8_t buf[2] = { static_cast<uint8_t>(reg), value };
             ByteBuffer w(buf, 2);
+            w.write(buf, 2); // 标记 2 字节已写入, 否则 used()==0, IIC 一个字节都发不出
             dev.write(w);
         }
 
@@ -66,6 +67,7 @@ namespace dlx
         {
             uint8_t addr[1] = { static_cast<uint8_t>(reg) };
             ByteBuffer w(addr, 1);
+            w.write(addr, 1); // 标记寄存器地址已写入, 否则 used()==0, 读操作不带寄存器地址
             ByteBuffer r(out, n);
             dev.read(r, w, n);
         }

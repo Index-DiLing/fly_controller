@@ -196,6 +196,11 @@ void EXTI15_10_IRQHandler(void)
     DLX_IT_invoke_callback(EXTI15_10_IRQn);
 }
 
+void TIM7_IRQHandler(void)
+{
+  DLX_IT_invoke_callback(TIM7_IRQn);
+}
+
 
 
 #ifdef __cplusplus

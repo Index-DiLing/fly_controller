@@ -32,7 +32,7 @@ constexpr uint32_t kSerBaud     = 2000000;
 //     param == kParamSerialLog(其它) -> 串口回传 + 正常飞行(台架)
 //   超过超时未收到 UnBlock -> flash 写入模式(飞行): 写 flash, 关串口回传
 // ------------------------------------------------------------------ //
-constexpr uint32_t kUnblockTimeoutMs = 10000;
+constexpr uint32_t kUnblockTimeoutMs = 12000;
 constexpr uint8_t  kParamSerialLog  = 14;
 constexpr uint8_t  kParamFlashDump  = 13;
 enum class LogMode : uint8_t { SerialTelemetry, FlashDump, FlashLog };
@@ -41,7 +41,7 @@ enum class LogMode : uint8_t { SerialTelemetry, FlashDump, FlashLog };
 // 帧紧邻; 读取端以"首两字节 0xFFFF / 非法 DLX 头"为终止(表示从未写过).
 // ------------------------------------------------------------------ //
 constexpr uint32_t kFlashLogStart  = 0x000000u;
-constexpr uint32_t kFlashLogBlocks = 16u;
+constexpr uint32_t kFlashLogBlocks = 32u;
 constexpr uint32_t kFlashLogSize   = kFlashLogBlocks * W25Q128_BLOCK64K_SIZE;
 constexpr uint16_t kFlightDebugMaxFrame = 256;
 #define FLASH_CS GPIOProfile::D1
@@ -431,6 +431,8 @@ int main()
                 fcc->stopMotor = true;
             } else if (fcc->command > 3) {
                 fcc->dst->stop();
+                fcc->dst->disableOutputs();
+                fcc->ds->stop();
                 fcc->stopMotor = true;
             }
             rt_exit_critical();
@@ -551,26 +553,33 @@ int main()
         }
         if (start) {
             fc.ds->preloadThrottle(0, 0, 0, 0);
-            fc.dst->start();
-            fc.ds->start();
+            fc.dst->start();          // 先启动定时器时基(计数)
+            fc.dst->enableOutputs();  // 再使能定时器主输出(MOE), 让 DShot 信号出现在引脚
+            fc.ds->start();           // 最后启动 DMA 搬运新帧
             motorStart = now_ms;
             starting   = true;
         }
         if (stop) {
-            fc.dst->stop();
+            fc.dst->stop();           // 关闭定时器计数
+            fc.dst->disableOutputs(); // 关闭主输出(MOE), 引脚回到安全电平
+            fc.ds->stop();            // 停止 DMA 搬运并清 transferStatus
             en       = false;
             starting = false;
         }
-        if ((now_ms - motorStart) > 3000 && !en && starting) en = true;
+        if ((now_ms - motorStart) > 3200 && !en && starting) en = true;
         FlightControlOutput out;
         bool pidSat = false;
         if (cmd == 0 && en && !stop) {
             controller.updateAngle(sp, fcs, kLoopDt, out);
             out.throttle = max(manThr, 0.01f);
             const auto ctrlMotor = mixMotors(out, controller.params());
+            // 逻辑电机 -> 物理 DShot 通道映射:
+            //   逻辑 M0 左前 -> 通道0(电机1 左上);  M1 右前 -> 通道2(电机3 右上)
+            //   M2 右后 -> 通道3(电机4 右下);        M3 左后 -> 通道1(电机2 左下)
+            static const int kPhysFromLogical[4] = {0, 2, 3, 1};
             for (int i = 0; i < 4; i++) {
-                motor[i] = (uint16_t)(ctrlMotor.motor[i] * 1900.0f + 50.0f);
-                if (motor[i] <= 55u || motor[i] >= 1945u) pidSat = true;
+                motor[kPhysFromLogical[i]] = (uint16_t)(ctrlMotor.motor[i] * 1900.0f + 50.0f);
+                if (motor[kPhysFromLogical[i]] <= 55u || motor[kPhysFromLogical[i]] >= 1945u) pidSat = true;
             }
         }
         if (en && !stop) fc.ds->preloadThrottle(motor);

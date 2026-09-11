@@ -47,4 +47,14 @@ namespace dlx
         float data[4];
     };
 
+    // GNSS 本地切平面位置 (ENU: 东/北/天 [m], 原点在起飞点)
+    struct GnssPosition {
+        float data[3];
+    };
+
+    // GNSS 地速 (ENU [m/s])
+    struct GnssVelocity {
+        float data[3];
+    };
+
 } // namespace dlx

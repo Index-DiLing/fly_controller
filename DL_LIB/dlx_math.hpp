@@ -9,7 +9,8 @@
 //
 // 约定:
 //   - Quaternion 使用 dlx_sensor_data.hpp 中的类型, data[0..3] = (w, x, y, z).
-//   - 姿态四元数为“世界系 -> 机体系”的旋转四元数, 与 MadgwickAHRS 输出一致.
+//   - 姿态四元数为“机体系 -> 世界系”的旋转四元数, 与 MadgwickAHRS 输出一致
+//     (即 v_world = R(q) * v_body; quatDcmZ / quatRotate 均按此解释).
 //   - Vector3f.data[0..2] = (x, y, z).
 //   - 所有函数为纯浮点计算, 无动态内存, 可直接用于单片机.
 //===================================================================================================
@@ -336,6 +337,190 @@ namespace dlx
         r.z() = atan2f(2.0f * (n.data[0] * n.data[1] + n.data[2] * n.data[3]),
                        1.0f - 2.0f * (n.data[1] * n.data[1] + n.data[2] * n.data[2])); // roll
         return r;
+    }
+
+    //================================================================================================
+    // 固定尺寸浮点矩阵 (无动态内存, 供 EKF 等滤波算法复用)
+    //   列向量用 MatF<N,1> 表示, 标量用 MatF<1,1>.
+    //================================================================================================
+    template <size_t R, size_t C>
+    struct MatF
+    {
+        float d[R][C];
+
+        MatF()
+        {
+            for (size_t i = 0; i < R; ++i) {
+                for (size_t j = 0; j < C; ++j) {
+                    d[i][j] = 0.0f;
+                }
+            }
+        }
+
+        float &operator()(size_t i, size_t j) { return d[i][j]; }
+        float operator()(size_t i, size_t j) const { return d[i][j]; }
+    };
+
+    template <size_t R, size_t C>
+    inline MatF<C, R> matTranspose(const MatF<R, C> &a)
+    {
+        MatF<C, R> r;
+        for (size_t i = 0; i < R; ++i) {
+            for (size_t j = 0; j < C; ++j) {
+                r.d[j][i] = a.d[i][j];
+            }
+        }
+        return r;
+    }
+
+    template <size_t A, size_t K, size_t B>
+    inline MatF<A, B> matMul(const MatF<A, K> &a, const MatF<K, B> &b)
+    {
+        MatF<A, B> r;
+        for (size_t i = 0; i < A; ++i) {
+            for (size_t j = 0; j < B; ++j) {
+                float s = 0.0f;
+                for (size_t k = 0; k < K; ++k) {
+                    s += a.d[i][k] * b.d[k][j];
+                }
+                r.d[i][j] = s;
+            }
+        }
+        return r;
+    }
+
+    template <size_t R, size_t C>
+    inline MatF<R, C> matAdd(const MatF<R, C> &a, const MatF<R, C> &b)
+    {
+        MatF<R, C> r;
+        for (size_t i = 0; i < R; ++i) {
+            for (size_t j = 0; j < C; ++j) {
+                r.d[i][j] = a.d[i][j] + b.d[i][j];
+            }
+        }
+        return r;
+    }
+
+    template <size_t R, size_t C>
+    inline MatF<R, C> matSub(const MatF<R, C> &a, const MatF<R, C> &b)
+    {
+        MatF<R, C> r;
+        for (size_t i = 0; i < R; ++i) {
+            for (size_t j = 0; j < C; ++j) {
+                r.d[i][j] = a.d[i][j] - b.d[i][j];
+            }
+        }
+        return r;
+    }
+
+    template <size_t R, size_t C>
+    inline MatF<R, C> matScale(const MatF<R, C> &a, float s)
+    {
+        MatF<R, C> r;
+        for (size_t i = 0; i < R; ++i) {
+            for (size_t j = 0; j < C; ++j) {
+                r.d[i][j] = a.d[i][j] * s;
+            }
+        }
+        return r;
+    }
+
+    template <size_t R, size_t C>
+    inline MatF<R, C> matAddScaled(const MatF<R, C> &a, float sa, const MatF<R, C> &b, float sb)
+    {
+        MatF<R, C> r;
+        for (size_t i = 0; i < R; ++i) {
+            for (size_t j = 0; j < C; ++j) {
+                r.d[i][j] = a.d[i][j] * sa + b.d[i][j] * sb;
+            }
+        }
+        return r;
+    }
+
+    template <size_t N>
+    inline MatF<N, N> matIdent()
+    {
+        MatF<N, N> r;
+        for (size_t i = 0; i < N; ++i) {
+            r.d[i][i] = 1.0f;
+        }
+        return r;
+    }
+
+    // 3x3 行列式 (用于求逆)
+    inline float mat3Det(const MatF<3, 3> &m)
+    {
+        return m.d[0][0] * (m.d[1][1] * m.d[2][2] - m.d[1][2] * m.d[2][1])
+             - m.d[0][1] * (m.d[1][0] * m.d[2][2] - m.d[1][2] * m.d[2][0])
+             + m.d[0][2] * (m.d[1][0] * m.d[2][1] - m.d[1][1] * m.d[2][0]);
+    }
+
+    // 3x3 逆 (伴随除以行列式)
+    inline MatF<3, 3> mat3Inverse(const MatF<3, 3> &m)
+    {
+        const float det = mat3Det(m);
+        MatF<3, 3> r;
+        if (fabsf(det) < 1e-12f) {
+            return r; // 奇异, 返回零
+        }
+        const float inv = 1.0f / det;
+        r.d[0][0] = (m.d[1][1] * m.d[2][2] - m.d[1][2] * m.d[2][1]) * inv;
+        r.d[0][1] = -(m.d[0][1] * m.d[2][2] - m.d[0][2] * m.d[2][1]) * inv;
+        r.d[0][2] = (m.d[0][1] * m.d[1][2] - m.d[0][2] * m.d[1][1]) * inv;
+        r.d[1][0] = -(m.d[1][0] * m.d[2][2] - m.d[1][2] * m.d[2][0]) * inv;
+        r.d[1][1] = (m.d[0][0] * m.d[2][2] - m.d[0][2] * m.d[2][0]) * inv;
+        r.d[1][2] = -(m.d[0][0] * m.d[1][2] - m.d[0][2] * m.d[1][0]) * inv;
+        r.d[2][0] = (m.d[1][0] * m.d[2][1] - m.d[1][1] * m.d[2][0]) * inv;
+        r.d[2][1] = -(m.d[0][0] * m.d[2][1] - m.d[0][1] * m.d[2][0]) * inv;
+        r.d[2][2] = (m.d[0][0] * m.d[1][1] - m.d[0][1] * m.d[1][0]) * inv;
+        return r;
+    }
+
+    // 反对称阵 [v]x (用于叉乘: v x a = [v]x * a)
+    inline MatF<3, 3> skew(const Vector3f &v)
+    {
+        MatF<3, 3> m;
+        m.d[0][1] = -v.z();
+        m.d[0][2] = v.y();
+        m.d[1][0] = v.z();
+        m.d[1][2] = -v.x();
+        m.d[2][0] = -v.y();
+        m.d[2][1] = v.x();
+        return m;
+    }
+
+    // 按四元数(w,x,y,z, 机体系->世界系)构造机体系->世界系的旋转矩阵 R
+    inline MatF<3, 3> matFromQuaternion(const Quaternion &q)
+    {
+        Quaternion n = quatNormalize(q);
+        const float w = n.data[0], x = n.data[1], y = n.data[2], z = n.data[3];
+        MatF<3, 3> r;
+        r.d[0][0] = 1.0f - 2.0f * (y * y + z * z);
+        r.d[0][1] = 2.0f * (x * y - w * z);
+        r.d[0][2] = 2.0f * (x * z + w * y);
+        r.d[1][0] = 2.0f * (x * y + w * z);
+        r.d[1][1] = 1.0f - 2.0f * (x * x + z * z);
+        r.d[1][2] = 2.0f * (y * z - w * x);
+        r.d[2][0] = 2.0f * (x * z - w * y);
+        r.d[2][1] = 2.0f * (y * z + w * x);
+        r.d[2][2] = 1.0f - 2.0f * (x * x + y * y);
+        return r;
+    }
+
+    // Vector3f -> MatF<3,1>
+    inline MatF<3, 1> vecToMat(const Vector3f &v)
+    {
+        MatF<3, 1> m;
+        m.d[0][0] = v.x();
+        m.d[1][0] = v.y();
+        m.d[2][0] = v.z();
+        return m;
+    }
+
+    // MatF<3,1> -> Vector3f
+    inline Vector3f matToVec(const MatF<3, 1> &m)
+    {
+        return Vector3f(m.d[0][0], m.d[1][0], m.d[2][0]);
     }
 
 } // namespace dlx

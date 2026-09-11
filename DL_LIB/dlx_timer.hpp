@@ -31,7 +31,6 @@ namespace dlx
 {
     /**
      * @brief 基本计时器(TIM6 / TIM7)
-     *
      * 只有 预分频系数 和 定时器周期 两个数值参数可调:
      * 只能向上计数、CK_INT 固定、无输出通道、无 DMA(硬件本身就没有), 因此不需要工厂函数.
      * 中断只有 Update, 通过 dlx_nvic_it 注册回调.
@@ -89,7 +88,7 @@ namespace dlx
 
         /**
          * @brief 初始化时基并启动. 仅有的两个数值参数: 预分频系数与定时器周期
-         *
+         * 
          * @param prescaler TIM_Prescaler, 实际分频 = prescaler + 1
          * @param period    TIM_Period, 实际计数范围 = 0 ~ period
          * @note 使能 ARR 预装载, 之后 setAutoreload() 在更新事件生效
@@ -635,7 +634,10 @@ namespace dlx
             uint16_t prescaler = static_cast<uint16_t>(counterClock - 1);
             uint16_t period    = static_cast<uint16_t>(ticksPerBit - 1);
 
+            // 只配置时基, 不启动计数(init() 内部会 TIM_Cmd(ENABLE), 这里立即停掉,
+            // 计数实际由 main 在解锁时通过 dst->start() 控制)
             init(prescaler, period);
+            stop();
 
             // 4 路 PWM1 输出引脚(初始 CCR = 低电平位, 未收到帧时保持低)
             GPIOModeProfile af = getGPIOAFProfile();
@@ -656,7 +658,9 @@ namespace dlx
             initOutputChannel(TIMChannelProfile::Channel2, TimerOutputChannelModeProfile::PWM1_OEN_ONDIS_OH_IRst_NSet, lowPulse);
             initOutputChannel(TIMChannelProfile::Channel3, TimerOutputChannelModeProfile::PWM1_OEN_ONDIS_OH_IRst_NSet, lowPulse);
             initOutputChannel(TIMChannelProfile::Channel4, TimerOutputChannelModeProfile::PWM1_OEN_ONDIS_OH_IRst_NSet, lowPulse);
-            enableOutputs();
+            // 只配置输出通道, 不使能主输出(MOE)。MOE 由 main 解锁时 enableOutputs();
+            // 上电/未解锁阶段引脚保持安全电平, 不会向电调发出 DShot 帧
+            disableOutputs();
 
             // DMAR 突发 CCR1~CCR4, Update 事件触发, CCUS 使能(Update 事件搬运 CCR)
             setDMABurstConfig(TimerDMABaseProfile::CCR1, TIM_DMABurstLength_4Transfers);

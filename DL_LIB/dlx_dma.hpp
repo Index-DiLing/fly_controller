@@ -396,6 +396,10 @@ namespace dlx
             return (getDMA_Stream()->CR & DMA_SxCR_CT) == 0;
         }
 
+        inline void stop(){
+            DMA_Cmd(getDMA_Stream(),DISABLE);
+        }
+
     };
 
 } // namespace dlx

@@ -167,6 +167,15 @@ namespace dlx
             dataTransferDMA.start();
         }
 
+        // 停止 DMA 并清空同步状态; 与 start() 对称, 用于上锁/停止时关闭电调输出.
+        // 必须清 transferStatus, 否则下次 start() 前 preloadThrottle() 里的
+        // while(transferStatus!=0) 会死等(DMA 已停, TC 中断不再递减).
+        void stop()
+        {
+            dataTransferDMA.stop();
+            transferStatus = 0;
+        }
+
         // 直接覆盖油门并重新编码; 不做 while(transferStatus!=0) 阻塞等待.
         // 原因: transferStatus 只能靠 DMA TC 中断递减; 若 DMA 未启动(未解锁/加锁后),
         // 该值会卡在非零导致死等. 改为"最新值优先": 无论上次是否同步完, 本轮都直接写入,
