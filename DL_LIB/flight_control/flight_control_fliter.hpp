@@ -115,8 +115,23 @@ namespace dlx
         float accel_bias_walk_sigma{1e-5f}; // 加速度零偏随机游走 [m/s²/√Hz]
 
         // ---- 量测噪声 ----
-        float accel_tilt_gate_mss{1.0f};  // 倾角修正门限: |a|-g 超过则忽略 [m/s^2]
-        float accel_tilt_sigma{0.05f};    // 倾角修正量测噪声 (无量纲方向)
+        float accel_tilt_gate_mss{1.0f};  // 倾角修正门限: |a|-g 超过则忽略 [m/s^2] (瞬时"快筛")
+        float accel_tilt_sigma{0.05f};    // 倾角修正量测噪声 (无量纲方向); 实测加速度计方向误差常达数度, 建议 0.2~0.5
+
+        // ---- 倾角修正的"准静止"判定(新增, 可选) ----
+        // 只用 |a|≈g 的瞬时判据挡不住手晃: 晃动时 |a| 每个周期两次穿过 1g, 穿越瞬间幅值合格
+        // 但比力方向可能被切向/向心加速度污染几十度, 一次高增益更新就能把姿态拽反。
+        // 所以再要求"连续 hold_time_s 都满足 | |a|-g | <= hold_gate_mss 且角速度 <= hold_rate_dps"。
+        bool  accel_hold_enable{false};     // 关=保持原行为(瞬时门限即可); 打开才启用下面的持续判据
+        float accel_hold_gate_mss{0.15f};   // 持续判据: | |a|-g | 上限 [m/s^2] (静止实测 p95≈0.065)
+        float accel_hold_rate_dps{50.0f};   // 持续判据: 角速度上限 [deg/s] (静止实测 p95≈4)
+        float accel_hold_time_s{0.15f};     // 需要连续满足的时长 [s]
+        float accel_hold_assumed_dt_s{0.01f}; // 调用者没给 dt 时, 按这个周期累加(默认 100Hz)
+        float accel_tilt_inno_limit_rad{0.0f}; // 单次倾角修正的 innovation 限幅 [rad], 0=不限幅; 0.05≈2.9°
+        // 冻结陀螺零偏: 只有"通过倾角判定的那次更新"允许改 _bg, 其余量测(气压/GNSS/磁)不动它。
+        // 注意: 打开后零偏只能靠倾角修正学习, 所以必须配合 updateAccelerometer 使用;
+        //       若该应用不调用倾角修正(例如只有气压+GNSS), 请保持 false。
+        bool  freeze_gyro_bias_when_dynamic{false};
         float baro_sigma_m{0.3f};         // 气压高度噪声 [m]
         float rangefinder_sigma_m{0.05f}; // 超声波/激光测距高度噪声 [m] (近地面精度高)
         float gps_pos_sigma_m{2.0f};      // GNSS 位置噪声 [m]
@@ -178,6 +193,9 @@ namespace dlx
             _bg = Vector3f{};
             _ba = Vector3f{};
             _valid = false;
+            _hold_time_s        = 0.0f;  // 准静止计数器清零(重新计时)
+            _last_rate_rads     = 0.0f;
+            _bias_update_enabled = !_params.freeze_gyro_bias_when_dynamic;
             _P = MatF<FF_ERROR_COUNT, FF_ERROR_COUNT>{};
             _P.d[0][0] = _P.d[1][1] = _P.d[2][2] = _params.init_att_var;
             _P.d[3][3] = _P.d[4][4] = _P.d[5][5] = _params.init_vel_var;
@@ -231,6 +249,7 @@ namespace dlx
 
             // 四元数: q <- q * exp([0; om] dt)
             const float om_norm = norm(om);
+            _last_rate_rads = om_norm; // 供倾角修正的"准静止"判定使用(见 updateAccelerometer)
             if (om_norm > 1e-9f) {
                 _q = quatNormalize(quatMul(_q, quatFromAxisAngle(om, om_norm * dt)));
             }
@@ -264,6 +283,7 @@ namespace dlx
             const Vector3f fb(accel_mss.x() - _ba.x(),
                               accel_mss.y() - _ba.y(),
                               accel_mss.z() - _ba.z());
+            _last_rate_rads = norm(om); // 同 integrateNominal: 给倾角修正的准静止判定用
 
             // ---- 误差态连续雅可比 F (15x15) -> 离散转移 Phi = I + F*dt ----
             const MatF<3, 3> Rq = matFromQuaternion(_q);
@@ -344,14 +364,52 @@ namespace dlx
         //============================================================================================
         // 量测更新
         //============================================================================================
-        // 加速度计倾角修正: 仅在近似静止/匀速时可信 (| |a|-g | 不超过门限).
-        // 输入为机体系比力 [m/s^2] 或 [g].
-        void updateAccelerometer(const Vector3f &accel_mss)
+        // 加速度计倾角修正: 输入为机体系比力 [m/s^2] 或 [g].
+        //
+        // 为什么不能只看 |a|≈g: 手晃时 |a| 每个周期两次穿过 1g, 穿越瞬间幅值合格, 但比力方向
+        // 会被切向/向心加速度污染几十度; 此时若增益接近 1(P 已涨大而 R 还很小), 一次更新就能
+        // 把姿态拽反(实测出现过单帧 41°)。下面四级把关都可用参数关掉, 默认全关 = 旧行为:
+        //   1) 瞬时快筛    : | |a|-g | <= accel_tilt_gate_mss
+        //   2) 准静止判定  : 连续 accel_hold_time_s 都满足 | |a|-g | <= accel_hold_gate_mss
+        //                    且角速度 <= accel_hold_rate_dps(角速度取自最近一次
+        //                    integrateNominal()/propagateCovariance(), 不占接口)
+        //   3) innovation 限幅: |z-h| <= accel_tilt_inno_limit_rad (0=不限幅), 单次修正有上界
+        //   4) 零偏冻结    : freeze_gyro_bias_when_dynamic=true 时, 只有通过 1)+2) 的更新
+        //                    才允许改陀螺零偏, 高动态期间的量测误差不再灌进 _bg
+        // 返回值: true = 本次真的做了倾角修正; false = 被门限拒绝, 什么都没改.
+        //         遥测端用它统计"被拒了多少次" (原调用点忽略返回值即可)。
+        // dt: 本次调用间隔 [s]; 传 0 时按 accel_hold_assumed_dt_s 累加(与调用频率无关)。
+        bool updateAccelerometer(const Vector3f &accel_mss, float dt = 0.0f)
         {
-            const float n = norm(accel_mss);
-            if (fabsf(n - _params.gravity_mss) > _params.accel_tilt_gate_mss) {
-                return; // 高动态, 丢弃 (该倾角修正只在低动态有效)
+            const float n   = norm(accel_mss);
+            const float dev = fabsf(n - _params.gravity_mss);
+
+            // ---- 4) 默认先冻结零偏更新, 只有通过判定的那一次更新才解冻 ----
+            _bias_update_enabled = !_params.freeze_gyro_bias_when_dynamic;
+
+            // ---- 2) 准静止计数器(按时间累计, 换采样率也不会失真) ----
+            const float rate_dps = _last_rate_rads * (180.0f / 3.14159265358979f);
+            bool quiet = (dev <= _params.accel_hold_gate_mss);
+            if (_params.accel_hold_rate_dps > 0.0f) {
+                quiet = quiet && (rate_dps <= _params.accel_hold_rate_dps);
             }
+            if (_params.accel_hold_enable) {
+                _hold_time_s = quiet ? (_hold_time_s
+                                        + (dt > 0.0f ? dt : _params.accel_hold_assumed_dt_s))
+                                     : 0.0f;
+            } else {
+                _hold_time_s = _params.accel_hold_time_s; // 判定关掉 = 计数器视为已满足(旧行为)
+            }
+            if (_hold_time_s < _params.accel_hold_time_s) {
+                return false; // 还没静下来: 继续陀螺积分, 不做倾角修正
+            }
+
+            // ---- 1) 瞬时快筛 ----
+            if (dev > _params.accel_tilt_gate_mss) {
+                return false; // 高动态, 丢弃 (该倾角修正只在低动态有效)
+            }
+            _bias_update_enabled = true; // 通过判定: 本次允许更新零偏
+
             // 预测的机体系重力方向 (单位): h = R(q)^T * [0,0,1]
             const Vector3f h = quatRotate(quatConjugate(_q), Vector3f{0.0f, 0.0f, 1.0f});
             const Vector3f z = accel_mss / n;
@@ -360,6 +418,20 @@ namespace dlx
             innov.d[0][0] = z.x() - h.x();
             innov.d[1][0] = z.y() - h.y();
             innov.d[2][0] = z.z() - h.z();
+
+            // ---- 3) innovation 限幅: 等比缩小, 保证单次修正量有上界 ----
+            const float inno_limit = _params.accel_tilt_inno_limit_rad;
+            if (inno_limit > 0.0f) {
+                const float m = sqrtf(innov.d[0][0] * innov.d[0][0]
+                                      + innov.d[1][0] * innov.d[1][0]
+                                      + innov.d[2][0] * innov.d[2][0]);
+                if (m > inno_limit) {
+                    const float s = inno_limit / m;
+                    innov.d[0][0] *= s;
+                    innov.d[1][0] *= s;
+                    innov.d[2][0] *= s;
+                }
+            }
 
             MatF<3, FF_ERROR_COUNT> H;
             const MatF<3, 3> sh = skew(h); // [h]x
@@ -370,14 +442,15 @@ namespace dlx
             }
             MatF<3, 3> Rz = matScale(matIdent<3>(), _params.accel_tilt_sigma * _params.accel_tilt_sigma);
             kalmanUpdate(H, Rz, innov);
+            return true;
         }
 
-        void updateAccelerometer(const AccelerometerG &accel_g)
+        bool updateAccelerometer(const AccelerometerG &accel_g, float dt = 0.0f)
         {
             Vector3f accel_mss(accel_g.data[0] * _params.gravity_mss,
                                accel_g.data[1] * _params.gravity_mss,
                                accel_g.data[2] * _params.gravity_mss);
-            updateAccelerometer(accel_mss);
+            return updateAccelerometer(accel_mss, dt);
         }
 
         // 气压高度 [m] (向上为正, 与状态 pz 同号; 以起飞点/海平面为参考系)
@@ -466,6 +539,20 @@ namespace dlx
         float getHeight() const { return _p.z(); }               // 世界系 z 高度 [m]
         float getVerticalVelocity() const { return _v.z(); }     // 垂向速度 [m/s]
         bool isValid() const { return _valid; }
+
+        // ---- 误差态协方差 P(15x15) 只读访问, 供遥测/日志分析(不影响滤波行为) ----
+        // 顺序同 FlightFilterErrorIdx: δθ(3) δv(3) δp(3) δbg(3) δba(3)
+        void getCovDiag(float out[FF_ERROR_COUNT]) const
+        {
+            for (int i = 0; i < FF_ERROR_COUNT; ++i) {
+                out[i] = _P.d[i][i];
+            }
+        }
+        float getAttVar(int i) const       { return _P.d[FF_E_DTH0 + i][FF_E_DTH0 + i]; }
+        float getVelVar(int i) const       { return _P.d[FF_E_DV0 + i][FF_E_DV0 + i]; }
+        float getPosVar(int i) const       { return _P.d[FF_E_DP0 + i][FF_E_DP0 + i]; }
+        float getGyroBiasVar(int i) const  { return _P.d[FF_E_DBG0 + i][FF_E_DBG0 + i]; }
+        float getAccelBiasVar(int i) const { return _P.d[FF_E_DBA0 + i][FF_E_DBA0 + i]; }
 
         // 按 16 维状态向量顺序拷贝到外部 float[16], 便于日志/上位机
         void getState(float out[FF_STATE_COUNT]) const
@@ -556,7 +643,9 @@ namespace dlx
             }
             _v += dv;
             _p += dp;
-            if (_params.estimate_gyro_bias) {
+            // 零偏冻结: freeze_gyro_bias_when_dynamic 打开时, 只有通过准静止判定的那次
+            // 更新才允许动 _bg(见 updateAccelerometer); 其余量测(气压/GNSS/磁)不更新零偏。
+            if (_params.estimate_gyro_bias && _bias_update_enabled) {
                 _bg += dbg;
             }
             if (_params.estimate_accel_bias) {
@@ -588,6 +677,11 @@ namespace dlx
         Vector3f _bg;    // 陀螺零偏
         Vector3f _ba;    // 加速度零偏
         bool _valid;
+
+        // 倾角修正的"准静止"判定 / 零偏冻结 状态 (由 updateAccelerometer 维护)
+        float _hold_time_s{0.0f};          // 已连续满足准静止条件的时长 [s]
+        float _last_rate_rads{0.0f};       // 最近一次积分用的去偏角速度模值 [rad/s]
+        bool  _bias_update_enabled{true};  // 本次更新是否允许改陀螺零偏
 
         // 误差态协方差 (15 x 15)
         MatF<FF_ERROR_COUNT, FF_ERROR_COUNT> _P;

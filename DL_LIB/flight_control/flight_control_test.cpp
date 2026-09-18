@@ -167,8 +167,15 @@ static void testMixer()
     }
 
     // 饱和: 大油门 + 大力矩 -> 电机不越界, 总油门不变 (推力优先)
+    //   力矩大小按参数反推: k = m*g/(4*hover), d_pitch = Ty/(4*ARM_FORWARD_M*k),
+    //   要让 T + d > 1 得 Ty > (1-T)*4*ARM_FORWARD_M*k。这里取 1.2 倍余量,
+    //   以后改 hover / 臂长 / 质量时这条断言不会悄悄失效(以前写死的 0.3N·m 就失效过)。
+    const float kMix =
+        (p.get(dlx::FlightParamId::MASS_KG) * 9.80665f / p.get(dlx::FlightParamId::HOVER_THROTTLE)) / 4.0f;
+    const float tySaturate =
+        (1.0f - 0.9f) * 4.0f * p.get(dlx::FlightParamId::ARM_FORWARD_M) * kMix * 1.2f;
     out.throttle = 0.9f;
-    out.torque = Vector3f{0.3f, 0.3f, 0.05f};
+    out.torque = Vector3f{tySaturate, tySaturate, 0.05f};
     {
         const dlx::FlightControlMotorOutput mo = dlx::mixMotors(out, p);
         float sum = 0.0f;

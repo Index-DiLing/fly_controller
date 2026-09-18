@@ -98,10 +98,10 @@ static LogEntry makeEntry(uint32_t tick, float throttle, uint16_t flags)
 {
     LogEntry e;
     memset(&e, 0, sizeof(e));
-    e.tickMs = tick;
-    e.throttle = throttle;
-    e.flags = flags;
-    e.rollRad = 0.001f * static_cast<float>(tick);
+    e.tickMs      = tick;
+    e.throttle    = throttle;
+    e.flags       = flags;
+    e.bodyRate[0] = 0.001f * static_cast<float>(tick);
     return e;
 }
 

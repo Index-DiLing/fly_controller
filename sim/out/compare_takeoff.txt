@@ -1,0 +1,4 @@
+config               rollErrMax pitchErrMax tiltErrRMS tiltErrMax liftoff[s] altMax[m] sat%    
+EKF (as flown)       28.878     35.764     24.960     38.430     2.52      0.91      0.0     
+EKF (tuned)          15.807     23.498     13.369     22.383     2.51      2.56      0.0     
+Madgwick + VzEst     27.923     33.184     20.558     32.930     2.52      1.86      0.0     

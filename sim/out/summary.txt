@@ -1,0 +1,3 @@
+scenario         filter        hover   tSig   tGate  tInno  | rollErrMax rollSSerr  pitchSSerr tiltErrRMS | altSSerr  satFrac  
+hover_H10        EKF           0.2621  0.080  0.20   0.150  | 0.884     0.656      2.641     2.442      | nan       0.000    
+doublet_H10      EKF           0.2621  0.080  0.20   0.150  | 19.247    9.920      2.599     4.049      | nan       0.000    

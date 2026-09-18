@@ -25,6 +25,18 @@ powershell -ExecutionPolicy Bypass -File .\test\flashfs_sim\run.ps1
 | `run.ps1` | 复制源码 -> 编译 -> 运行的脚本 |
 | `_build\` | 生成物(可随时删) |
 
+## 上板自测 main 的"干跑"
+
+`main_check\` 是上板测试程序 `main_flash_fs.cpp` 的主机端干跑环境(桩掉 STM32/USART/GPIO/SPI,
+用内存模拟 Flash, 并把 `main` 改名后用 `runner.cpp` 收尾)。不用板子就能验证这份 main 本身写对了,
+输出和上板时串口打印的内容完全一样:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\test\flashfs_sim\main_check\run.ps1
+```
+
+改完 `main_flash_fs.cpp` 建议先干跑一遍, 再上板(硬件时序/SPI 速度/电气问题仍只能上板发现)。
+
 ## 覆盖到的场景
 
 1. 空芯片首次初始化: 整片擦除 + 新建文件系统(返回 `FLASH_SYSTEM_CREATED`)、进度回调次数

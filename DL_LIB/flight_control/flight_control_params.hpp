@@ -129,7 +129,18 @@ namespace dlx
         0.0124f, // INERTIA_YY
         0.0338f, // INERTIA_ZZ
         0.03f,  // YAW_TORQUE_ARM_M
-        0.30f,  // HOVER_THROTTLE: 估测悬停(1.566kg -> 每电机~391g, 由 40%/20% 推力点拟合)
+        /**
+         * HOVER_THROTTLE: 悬停油门(归一化)
+         *
+         * 首飞实测悬停大致落在 25% 杆量(原来按推力图估算的 30% 偏高), 2026-09-13 下调到 0.25。
+         * 注意它有两处用途, 改它等于同时改两件事:
+         *   1. 定高模式(updateAngleHeight)的**基准油门**: throttle = hover * (1 + acc_z/g);
+         *   2. 混控(混控器)把"期望力矩"换算成"油门差动"的比例 k = m*g/(4*hover) ——
+         *      hover 调小 ⇒ k 变大 ⇒ 同样力矩需要的差动变小, 姿态环的**等效增益按 1/hover 变化**。
+         *      0.30→0.25 相当于姿态环等效增益降到原来的 0.83 倍(会明显变"软"一档),
+         *      如果手感太肉, 把 RATE_ROLL/PITCH_P 从 8.0 提到 ~9.5 补回来即可。
+         */
+        0.25f,
         0.05f,  // THROTTLE_MIN
         1.0f,   // THROTTLE_MAX
         0.35f,  // TILT_MAX_RAD (~20°, 首飞保守)
@@ -140,10 +151,10 @@ namespace dlx
         2.0f,   // RATE_ROLL_MAX (~114°/s)
         2.0f,   // RATE_PITCH_MAX
         1.0f,   // RATE_YAW_MAX (~57°/s)
-        8.0f,   // RATE_ROLL_P (首飞保守)
+        9.0f,   // RATE_ROLL_P (首飞保守)
         2.0f,   // RATE_ROLL_I
         0.015f, // RATE_ROLL_D
-        8.0f,   // RATE_PITCH_P
+        9.0f,   // RATE_PITCH_P
         2.0f,   // RATE_PITCH_I
         0.015f, // RATE_PITCH_D
         5.0f,   // RATE_YAW_P

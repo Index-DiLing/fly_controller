@@ -90,6 +90,13 @@ uint32_t loopCostCnt = 0; // 统计周期内主循环次数
 uint32_t loopCostAcc = 0; // 累计主循环 CPU 周期(含 sem 等待, 不含底部 DMA)
 uint32_t loopCostMax = 0; // 单次主循环最大 CPU 周期(不含底部 DMA)
 
+// ---- EkfCompare(类型 16) 对比包状态 ----
+uint32_t cmpSeq        = 0; // 自增帧号
+uint32_t lastLoopStart = 0; // 上一次循环起点(DWT), 用于实测循环周期
+// 1 = 每轮都发(500Hz); 2 = 每两轮发一次(250Hz); 4 = 125Hz。带宽紧张时调大。
+constexpr uint8_t kCmpDecim = 1;
+uint8_t cmpDiv              = 0;
+
 AccelerometerG lastAcc      = {{0.0f, 0.0f, 1.0f}};
 GyroscopeRads lastGyro      = {{0.0f, 0.0f, 0.0f}};
 AccelerometerRaw lastAccRaw = {{0, 0, 0}};
@@ -115,21 +122,29 @@ int main()
     auto usart1 = USART::USART1_TA9_RAA();
     usart1.init(USARTModeProfile::WL8_SB1_PN_RXTX_FCN, 2000000, buf);
 
-    uint8_t dmaB[128];
-    ByteBuffer dmaBuffer(dmaB, 128);
-    uint8_t fr[128];
-    ByteBuffer frame(fr, 128);
+    // 每轮要发 Quat(18B) + EKF(26B) + EkfCompare(146B) = 190B, 缓冲区必须放得下,
+    // 否则生成代码里 buffer.remaining() 不够会直接 return false(静默丢帧, 不报错).
+    uint8_t dmaB[256];
+    ByteBuffer dmaBuffer(dmaB, 256);
+    uint8_t fr[256];
+    ByteBuffer frame(fr, 256);
     DLX_ProtocolBuffer protocol(dmaBuffer, &buf, &frame);
 
+
     bool atom = true;
-    protocol.setUnBlockCallbackFunction(+[](UnBlock *, void *at) {
-        bool *p = static_cast<bool *>(at);
-        *p = false; }, &atom);
-    while (atom) {
-        if (protocol.check()) {
-            pf3 = 1;
-        }
+
+    protocol.setGroundCmdCallbackFunction(+[](GroundCmd *, void * at){
+        *static_cast<bool*>(at) = false;
+    },&atom);
+
+    while (atom)
+    {
+        protocol.check();
     }
+
+    pf3 = 1;
+
+    
     //----BME280----
 
     IICBus bus = IICBus::IIC1_SB6_DB7();
@@ -169,8 +184,34 @@ int main()
 
     // ---- 两个估计器: 同一份 IMU, 同一周期 ----
     MadgwickAHRS ahrs(kImuRateHz, kMadgwickBeta); // Quat 通道 (Madgwick)
+    ekfParams.estimate_gyro_bias = true;
     ekfParams.estimate_accel_bias = false;        // 纯 IMU: 加速度零偏保持常数(不可观)
-    ekfParams.accel_tilt_gate_mss = 2.0f;         // 放宽倾角修正门限, 接近 Madgwick 行为
+    // 倾角修正的瞬时门限: | |a|-g | > 0.20 就丢。0.05 太严 —— 它低于加速度计自身的噪声底
+    // (实测静止时 | |a|-g | 的 p95 就有 6.5~22 mg, 单位 m/s^2 即 0.065~0.22), 结果静止时
+    // 大部分修正也被拒, 姿态收敛不动(第二份数据: 稳态误差 2.45°, 而 Madgwick 只有 0.23°)。
+    ekfParams.accel_tilt_gate_mss = 0.20f;
+
+    // ---- 倾角修正的三道保险(2026-09-15 两轮手晃数据 + 500Hz 录播回放扫参数) ----
+    // 病根一: 手晃时 |a| 每周期两次穿过 1g 让门限打开, 而那一刻比力方向可能被切向/向心加速度
+    //          污染几十度; 原来 P 已涨大而 R 只有 0.05 => 增益接近 1, 一次更新把姿态拽反(单帧 41°)。
+    // 病根二: 门限 0.05 m/s^2 低于噪声底 => 静止时修正也被大量拒绝; 限幅 0.05rad 又卡住正常修正
+    //          (实测门限打开时的 innovation 中位就有 4.88°), 于是"最后那一点角度"收敛极慢。
+    // 回放扫参结果(两份数据都验):
+    //   参数                                 单步最大   反向   静止段误差   手晃段误差(中位/p95)
+    //   原固件(gate .05/无限幅/σ.05)        41.7°     93   0.17/0.36   0.24/4.80
+    //   上版(gate .05/限幅.05/σ.15)          2.3°      0   0.18/0.37   1.11/16.4   <- 太保守
+    //   本版(gate .20/限幅.15/σ.08)          3.0°      0   0.17/0.36   0.24/4.00   <- 精度追平/略胜 Madgwick
+    //   更激进(gate .30/限幅.20/σ.05)        4.4°     10   0.17/0.36   0.21/3.31   <- 反向回来了, 别越界
+    //   (Madgwick 参照:                     2.3°      0   0.16/0.35   0.20/3.54)
+    // 收敛速度(第二份数据, 手晃停下后): 起始误差 6.64°->1.41°, 0.3s 后 5.11°->0.54°, 稳态 2.45°->0.31°
+    ekfParams.accel_tilt_inno_limit_rad     = 0.15f; // 单次修正 innovation 限幅 ≈8.6°(别关: 这是防单帧跳变的根)
+    ekfParams.accel_tilt_sigma     = 0.08f;  // 门限/限幅放宽后, 增益要相应恢复到 ~0.16 才能收敛得动
+    ekfParams.freeze_gyro_bias_when_dynamic = true;  // 高动态期间冻结陀螺零偏
+    // 可选: 想把"高动态期完全不修正"作为第二道保险, 打开下面这组(代价是中等角速度段跟随变慢)
+    ekfParams.accel_hold_enable    = false;  // 关=保持瞬时门限行为; 开=要求持续准静止
+    ekfParams.accel_hold_gate_mss  = 0.15f;  // | |a|-g | <= 15mg (静止实测 p95≈6.5mg)
+    ekfParams.accel_hold_rate_dps  = 150.0f; // 角速度 <= 150deg/s (静止实测 p95≈4deg/s; 50 会掉精度)
+    ekfParams.accel_hold_time_s    = 0.05f;  // 需要连续满足 50ms
     ekfParams.baro_sigma_m        = 1.0f;         // BME280 气压高度本征噪声约 ±0.5~1m, 放宽才不会被带着抖
     ekf.set(ekfParams);
     ekf.reset(); // 姿态默认水平, 速度/位置 0
@@ -195,6 +236,9 @@ int main()
         rt_sem_take(mutex, RT_WAITING_FOREVER);
         
         const uint32_t loopStart = DWT->CYCCNT; // 本次循环起点(在 rt_sem_take 之后: 只统计纯工作量, 不含等待与底部 DMA)
+        bool    baroUpdatedThisFrame = false;   // 本帧是否有气压观测送进 EKF
+        uint8_t slowCnt              = 0;       // 本帧慢路径(协方差+倾角)执行次数
+        uint8_t gateReject           = 0;       // 本帧倾角修正被门限拒绝次数
         bmi.fifoRead(ac, gy);
         const auto gySize = gy.size();
         const auto acSize = ac.size();
@@ -234,7 +278,9 @@ int main()
             imuDtAccum += kImuDt;
             if (++imuCnt >= kEkfDecim) {
                 ekf.propagateCovariance(gyroR, curAcc, imuDtAccum);
-                ekf.updateAccelerometer(curAcc);
+                // 传入慢路径累计 dt: 准静止计数器按时间累加(与 kEkfDecim 无关)
+                if (!ekf.updateAccelerometer(curAcc, imuDtAccum)) { ++gateReject; } // 被门限/判定拒绝
+                ++slowCnt;
                 imuCnt     = 0;
                 imuDtAccum = 0.0f;
             }
@@ -261,6 +307,7 @@ int main()
             }
             lastBaroObs = lastBaroAbs - baroRef; // 相对起飞点高度
             ekf.updateBarometer(lastBaroObs);
+            baroUpdatedThisFrame = true;
         }
 
         // ---- 上报 ----
@@ -276,6 +323,49 @@ int main()
 
         FlightFilterState16 st = ekf.getState16();
         protocol.EKFW(st.data, ekf.getHeight(), ekf.getVerticalVelocity()); // 类型 12: 16 float 状态 + 高度 + 垂速(vh)
+
+        // ---- 对比包: Madgwick vs EKF (类型 16, 144B 负载) ----
+        // 两路姿态 + EKF 内部量(速度/零偏/协方差对角) + 输入快照 + 健康计数, 便于上位机逐帧比对。
+        if (++cmpDiv >= kCmpDecim) {
+            cmpDiv = 0;
+
+            const Quaternion qE = ekf.getQuaternion();
+            const Vector3f   vE = ekf.getVelocity();
+            const Vector3f   bE = ekf.getGyroBias();
+
+            float ekfQuatArr[4] = {qE.data[0], qE.data[1], qE.data[2], qE.data[3]};
+            float velArr[3]     = {vE.x(), vE.y(), vE.z()};
+            float bgArr[3]      = {bE.x(), bE.y(), bE.z()};
+            float attVar[3]     = {ekf.getAttVar(0), ekf.getAttVar(1), ekf.getAttVar(2)};
+            float velVar[3]     = {ekf.getVelVar(0), ekf.getVelVar(1), ekf.getVelVar(2)};
+            float bgVar[3]      = {ekf.getGyroBiasVar(0), ekf.getGyroBiasVar(1),
+                                   ekf.getGyroBiasVar(2)};
+
+            // 实测循环周期: DWT 168MHz, /(SystemCoreClock/1e6) = us (第一帧无意义, 会被夹住)
+            uint32_t periodUs = (uint32_t)(loopStart - lastLoopStart) / (SystemCoreClock / 1000000u);
+            lastLoopStart     = loopStart;
+            if (periodUs > 0xFFFFu) { periodUs = 0xFFFFu; }
+
+            uint16_t cmpFlags = 0;
+            if (bmeOk)                { cmpFlags |= 1u << 0; } // 气压计可用
+            if (baroRefSet)           { cmpFlags |= 1u << 1; } // 气压基准已锁
+            if (baroUpdatedThisFrame) { cmpFlags |= 1u << 2; } // 本帧有气压更新
+            if (slowCnt)              { cmpFlags |= 1u << 3; } // 本帧跑了慢路径
+            if (gateReject)           { cmpFlags |= 1u << 4; } // 倾角被门限拒绝
+            if (ekf.isValid())        { cmpFlags |= 1u << 5; }
+            if (!(isfinite(qE.data[0]) && isfinite(qE.data[1]) && isfinite(qE.data[2]) &&
+                  isfinite(qE.data[3]) && isfinite(ekf.getHeight()) && isfinite(vE.x()))) {
+                cmpFlags |= 1u << 6;                           // 检出 NaN/Inf
+            }
+
+            protocol.EkfCompareW(
+                ++cmpSeq, (uint32_t)rt_tick_get(), (uint16_t)periodUs, cmpFlags,
+                (uint8_t)gySize, (uint8_t)acSize, slowCnt, gateReject,
+                lastGyro.data, lastAcc.data,
+                quatMadgwick, ekfQuatArr,
+                velArr, bgArr, ekf.getHeight(), lastBaroObs,
+                attVar, velVar, bgVar, ekf.getPosVar(2));
+        }
 
         // ---- 主循环耗时, 每 200ms 打一条(按时间, 不看循环次数) ----
         if ((uint32_t)(rt_tick_get() - lastLogTick) >= 200) {

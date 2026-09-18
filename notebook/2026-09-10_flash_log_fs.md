@@ -85,10 +85,10 @@
 ```
 offset 0                          槽头记录(AA + FlashLogSlotHeader + 00 = 18 字节，占用到 20)
 offset 20 (FLASH_LOG_ENTRY_AREA_OFFSET)
-  ├─ 条目 #0 :  AA + LogEntry(56B) + 00   + 补齐  → 共 60 字节(FLASH_LOG_ENTRY_STRIDE)
+  ├─ 条目 #0 :  AA + LogEntry(144B) + 00  + 补齐  → 共 148 字节(FLASH_LOG_ENTRY_STRIDE)
   ├─ 条目 #1 :  同上
   ├─ ...
-  └─ 条目 #2183 (每槽 2184 条：(131072-20)/60)
+  └─ 条目 #884 (每槽 885 条：(131072-20)/148)
     剩余不足一个步长的尾部不写，保持 0xFF
 ```
 
@@ -104,7 +104,7 @@ offset 20 (FLASH_LOG_ENTRY_AREA_OFFSET)
 
 ### 3.3 条目(LogEntry)
 
-`0xAA + 结构体 + 0x00`，步长固定 60 字节；前 12 字节由管理器填/校验：
+`0xAA + 结构体 + 0x00`，步长固定 148 字节；前 12 字节由管理器填/校验：
 `type`(预留扩展)、`reserved`、`crc`、`sessionId`、`seq`(会话内序号，从 1 开始)；其余是业务字段。
 
 - 读的时候从条目区起点按步长走：帧头/帧尾/CRC/会话号任一不符就**停止**(截断式)，之前的数据仍然有效；
@@ -113,7 +113,7 @@ offset 20 (FLASH_LOG_ENTRY_AREA_OFFSET)
 ### 3.4 会话与预留区
 
 - **一次上电 = 一个日志会话**，`init()` 时开一个新会话；
-- 新会话从"最新槽的下一个槽"开始，一次**预留 N 个槽**(N = `FLASH_LOG_SESSION_SLOT_LIMIT`，默认 8 = 1MB)；
+- 新会话从"最新槽的下一个槽"开始，一次**预留 N 个槽**(N = `FLASH_LOG_SESSION_SLOT_LIMIT`，默认 32 = 4MB)；
   运行中还可以用 `dropSessions()` 丢掉最老的历史会话，把它们腾出的槽**并进当前会话的预留区**(见第 6 节)；
 - `init()` 保证这 N 个槽**擦干净**(见 4.2)，之后写满一个槽就自动接着用预留区里的下一个槽——
   **会话内部不再擦除**，所以飞行过程中不会突然卡几百毫秒；
@@ -213,7 +213,7 @@ erasedPrefix   = reservedSlots - used_prev                   // 上次预留区�
 
 ### 4.3 会话内部换槽：不擦
 
-`appendLog()` 发现当前槽写满(`slotEntries == 2184`)时：
+`appendLog()` 发现当前槽写满(`slotEntries == 885`)时：
 
 1. 如果 `slotUsed < reservedSlots`(预留区还有) → 直接写下一个槽的槽头，**不擦除**，写入成功，`err = FLASH_OK`；
 2. 如果预留区用完：
@@ -408,10 +408,10 @@ fs.format(err);                       // 整片重建(几十秒, 丢全部数据
 
 | 项 | 默认 | 说明 |
 | --- | --- | --- |
-| `LogEntry` | 56B | 管理器占前 12B，其余业务字段 |
-| 条目步长 / 每槽条目 | 60B / 2184 | 步长 = 对齐4(帧头+结构体+帧尾) |
+| `LogEntry` | 144B | 管理器占前 12B，其余业务字段(发布版飞行日志) |
+| 条目步长 / 每槽条目 | 148B / 885 | 步长 = 对齐4(帧头+结构体+帧尾) |
 | 槽大小 / 槽数 | 128KB / 127 | 日志段 15.87MB |
-| `FLASH_LOG_SESSION_SLOT_LIMIT` | 8 (1MB) | 单次会话上限 = 8 × 2184 = 17472 条 |
+| `FLASH_LOG_SESSION_SLOT_LIMIT` | 32 (4MB) | 单次会话上限 = 32 × 885 = 28320 条(50Hz 约 9.4 分钟) |
 | `FLASH_PARAM_VALUE_COUNT` | 64 | 参数槽 272B，每扇区 15 槽 |
 | `FLASH_META_SECTOR_COUNT` | 30 (120KB) | 自动 = 总扇区 - 参数 - 日志，专门垫磨损 |
 
@@ -459,8 +459,36 @@ powershell -ExecutionPolicy Bypass -File .\test\flashfs_sim\run.ps1
     腾出的槽让本次会话上限从 2 槽涨到 4 槽（并把预留区写满验证 8736 条上限）
 13. **丢掉跨多槽的最老会话**：按它实际占用的槽数擦除，之后继续写 + 下一次上电起点仍算得对
 
-上板自测：`main_flash_fs.cpp`(USART1 115200；SPI2 + /CS=PD1)，EIDE 里默认排除编译，
-要用就把 `main_att_ekf.cpp` 与它互换排除状态。
+2. **上板自测**：`main_flash_fs.cpp`(USART1 115200；SPI2 + /CS=PD1；LED=PF3)。
+
+   EIDE 里本文件默认是"排除编译"状态，要用就把 `main_att_ekf.cpp` 与它互换排除状态(右键 → Exclude/Include)，
+   编译烧写后看串口。它会跑 12 步、48 项检查，最后打印 `检查通过 N 项, 失败 M 项`：
+
+   | 步骤 | 内容 |
+   | --- | --- |
+   | 1 | init(没建立过就是整片擦除，几十秒，LED 每 64KB 翻一次) |
+   | 2 | 只读列出现有会话(先看一眼再擦) |
+   | 3 | 参数：load/peek/save/读回 |
+   | 4 | `clearHistory()` 清成已知状态 |
+   | 5 | 写 5 条 → 按序号读回 → 遍历校验 → 错误码 |
+   | 6 | 写满(1 槽 = 885 条) → `FLASH_LOG_FULL`，打印实测写入速度 |
+   | 7 | `OverwriteOldest` 写超预留区 → `FLASH_LOG_OVERWRITTEN` 且数据可读 |
+   | 8 | 重新 init 造 3 次历史会话(每次只擦上次用掉的 1 槽) |
+   | 9 | `dropSessions(1)` → 只擦最老会话的槽、当前会话不重开、预留区变大、还能写 |
+   | 10 | `clearHistory()` → 只剩当前会话、数据一条不少 |
+   | 11 | 再 init 两次：4 槽预留时也只擦上次真正用掉的槽 |
+   | 12 | 汇总 + 最终会话列表 |
+
+   上电后 3 秒内从串口发任意字符 = 只做只读部分(不动机上数据)，方便先导出旧日志。
+
+3. **上板 main 的主机干跑**：`test/flashfs_sim/main_check/`(桩掉 STM32/USART/GPIO/SPI + 内存模拟 Flash)，
+   不用板子就能验证这份 main 本身写对没有，输出与串口一致：
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\test\flashfs_sim\main_check\run.ps1
+   ```
+
+   当前 48 项全过。改完 main 先干跑再上板(硬件时序/SPI 速度/电气问题仍只能上板发现)。
 
 ---
 

@@ -4,6 +4,7 @@
 #include "dlx_gpio.hpp"
 #include "dlx_iic_profile.hpp"
 #include "dlx_bytebuffer.hpp"
+#include "dlx_delay.hpp" // 总线恢复要手工控时序
 namespace dlx
 {
     /**
@@ -14,6 +15,15 @@ namespace dlx
     {
     private:
         IICBusProfile profile;
+        GPIOProfile   sclPin{GPIOProfile::B6}; ///< 保存引脚, 供总线恢复时切回普通开漏输出用
+        GPIOProfile   sdaPin{GPIOProfile::B7};
+
+        /**
+         * 单次事件等待的轮询上限(约几百微秒~几毫秒, 远大于 100kHz 下一个字节的 90us)。
+         * 超了就认定总线异常, 本次传输作废 —— 宁可让这一次读失败, 也不能把整机卡在开机里。
+         */
+        static constexpr uint32_t kEventWaitLimit = 200000u;
+        bool busError = false; ///< 本次传输是否已出错(超时)
 
         inline I2C_TypeDef *getI2C_TypeDef()
         {
@@ -66,6 +76,8 @@ namespace dlx
         static inline IICBus make(GPIOProfile sclPin, GPIOProfile sdaPin, IICBusProfile profile)
         {
             IICBus bus(profile);
+            bus.sclPin = sclPin;
+            bus.sdaPin = sdaPin;
             GPIO scl(sclPin);
             scl.init(GPIOModeProfile::AF4_OD_NOPULL_50MHz);
             GPIO sda(sdaPin);
@@ -113,11 +125,23 @@ namespace dlx
 
         /**
          * @brief 阻塞等待 I2C 事件标志
-         * @note 不处理错误与超时, 从机无应答等异常下会卡死(与旧 dl_iic 行为一致)
+         * @return true = 事件到了; false = 超时
+         *
+         * @note 这里以前是**无超时死等**(`while (I2C_CheckEvent(...) != SUCCESS);`),
+         *       只要总线异常(从机不响应 / 上拉不足 / 速率跑不到 / SDA 被拉低)就会永久卡死。
+         *       气压计是在**开机初始化**里读的, 卡在这里的后果是整机起不来(实测踩过: 飞行模式
+         *       开机卡在 BMI088/BME280 初始化之间, 心跳灯定住、NRF 不出信号)。
+         *       现在改成有限次轮询: 失败后本次传输作废, 上层照 FLASH_NOK/baroOk=false 降级继续跑。
          */
-        void waitEvent(uint32_t event)
+        bool waitEvent(uint32_t event)
         {
-            while (I2C_CheckEvent(getI2C_TypeDef(), event) != SUCCESS);
+            for (uint32_t i = 0; i < kEventWaitLimit; ++i) {
+                if (I2C_CheckEvent(getI2C_TypeDef(), event) == SUCCESS) {
+                    return true;
+                }
+            }
+            busError = true; // 本次传输作废, 后续步骤不再空等
+            return false;
         }
 
         /**
@@ -125,6 +149,9 @@ namespace dlx
          */
         void start()
         {
+            if (busError) {
+                return;
+            }
             I2C_GenerateSTART(getI2C_TypeDef(), ENABLE);
             waitEvent(I2C_EVENT_MASTER_MODE_SELECT);
         }
@@ -144,6 +171,9 @@ namespace dlx
          */
         void sendAddress(uint8_t slaveAddress7, uint8_t direction)
         {
+            if (busError) {
+                return;
+            }
             I2C_Send7bitAddress(getI2C_TypeDef(), slaveAddress7 << 1, direction);
             if (direction == I2C_Direction_Transmitter) {
                 waitEvent(I2C_EVENT_MASTER_TRANSMITTER_MODE_SELECTED);
@@ -157,6 +187,9 @@ namespace dlx
          */
         void sendByte(uint8_t data)
         {
+            if (busError) {
+                return;
+            }
             I2C_SendData(getI2C_TypeDef(), data);
             waitEvent(I2C_EVENT_MASTER_BYTE_TRANSMITTED);
         }
@@ -179,6 +212,9 @@ namespace dlx
          */
         uint8_t receiveByte(bool ack)
         {
+            if (busError) {
+                return 0u;
+            }
             I2C_TypeDef *i2cx = getI2C_TypeDef();
             I2C_AcknowledgeConfig(i2cx, ack ? ENABLE : DISABLE);
             waitEvent(I2C_EVENT_MASTER_BYTE_RECEIVED);
@@ -191,6 +227,50 @@ namespace dlx
         void setAck(bool enable)
         {
             I2C_AcknowledgeConfig(getI2C_TypeDef(), enable ? ENABLE : DISABLE);
+        }
+
+        /** 本次传输是否出过错(超时); 每次传输开始前由 IICDevice 清零 */
+        bool hasError() const { return busError; }
+        void clearError() { busError = false; }
+
+        /**
+         * @brief 总线卡死恢复: 松开外设 -> 手工发 9 个 SCL 脉冲 + STOP -> 重新使能外设
+         *
+         * 从机在上电抖动/掉电瞬间可能把 SDA 拉住不放(实测: flash 初始化那段的干扰会让
+         * BME280 把总线拉死), 这时不管重试多少次都是超时 —— 必须让时钟多走几个脉冲,
+         * 把从机"卡在半途"的那一个字节顶完, 它才肯放开 SDA。
+         *
+         * 时序用 5us 半周期(约 100kHz), 对齐标准模式, 不挑从机。
+         */
+        void recover()
+        {
+            I2C_TypeDef *i2cx = getI2C_TypeDef();
+            I2C_Cmd(i2cx, DISABLE); // 让外设松开总线, 之后手工控制电平
+
+            GPIO scl(sclPin);
+            GPIO sda(sdaPin);
+            scl.init(GPIOModeProfile::OUT_OD_NOPULL_50MHz);
+            sda.init(GPIOModeProfile::OUT_OD_NOPULL_50MHz);
+
+            sda = 1;
+            for (uint32_t i = 0; i < 9u; ++i) { // 9 个脉冲: 足够让从机走完一个字节
+                scl = 0;
+                delay_us(5);
+                scl = 1;
+                delay_us(5);
+            }
+            // 手工 STOP: SCL 高电平期间让 SDA 由低变高
+            sda = 0;
+            delay_us(5);
+            scl = 1;
+            delay_us(5);
+            sda = 1;
+            delay_us(5);
+
+            scl.init(getGPIOAFProfile()); // 回到 I2C 复用
+            sda.init(getGPIOAFProfile());
+            I2C_Cmd(i2cx, ENABLE);        // 配置寄存器没被复位, 直接使能即可
+            busError = false;
         }
     };
 
@@ -212,13 +292,19 @@ namespace dlx
          * @brief 写操作: 发送起始+地址, 将 buffer 中已写入的数据依次发出, 最后停止
          * @note 外部需要写寄存器时自行拼接: 把 寄存器地址+数据 一起放进 buffer
          * @note 不保证不溢出, 数据长度由调用方保证
+         * @return true = 本次传输全程正常; false = 中途事件超时(总线异常)
          */
-        void write(ByteBuffer &buffer)
+        bool write(ByteBuffer &buffer)
         {
+            if (bus.hasError()) {
+                bus.recover(); // 上次卡死过: 先把总线救回来再发
+            }
+            bus.clearError(); // 本次传输重新计数
             bus.start();
             bus.sendAddress(address, I2C_Direction_Transmitter);
             bus.sendBuffer(buffer);
             bus.stop();
+            return !bus.hasError();
         }
 
         /**
@@ -227,9 +313,14 @@ namespace dlx
          * @note readBuffer 是追加写入的(从当前 cur 开始, 用其自带 write 接口),
          *       外部使用前需自行 reset(), 否则数据会接在已有内容之后
          * @note 不保证不溢出, readBuffer 需从 cur 起预留至少 length 字节
+         * @return true = 本次传输全程正常; false = 中途事件超时(读数不可信)
          */
-        void read(ByteBuffer &readBuffer, ByteBuffer &writeBuffer, uint16_t length)
+        bool read(ByteBuffer &readBuffer, ByteBuffer &writeBuffer, uint16_t length)
         {
+            if (bus.hasError()) {
+                bus.recover(); // 上次卡死过: 先把总线救回来再读
+            }
+            bus.clearError(); // 本次传输重新计数
             bus.start();
             bus.sendAddress(address, I2C_Direction_Transmitter);
             bus.sendBuffer(writeBuffer);
@@ -245,6 +336,7 @@ namespace dlx
 
             bus.stop();
             bus.setAck(true); // 恢复默认应答, 便于下次多字节读
+            return !bus.hasError();
         }
     };
 } // namespace dlx

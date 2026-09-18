@@ -15,8 +15,14 @@
 /*
  * Please modify RT_HEAP_SIZE if you enable RT_USING_HEAP
  * the RT_HEAP_SIZE max value = (sram size - ZI size), 1024 means 1024 bytes
+ *
+ * 发布版(release.cpp)的线程栈全部从这里分配, 预算:
+ *   main 线程栈 RT_MAIN_THREAD_STACK_SIZE = 24KB(控制环 + EKF 的大矩阵临时量)
+ *   nrf_tel 线程 3KB + logger 线程 3KB + 信号量/定时器对象 ~1KB
+ *   合计 ~31KB -> 留出余量取 40KB(片内 128KB RAM, 当前整体占用约 84KB)
+ * 注意: 若把 RT_MAIN_THREAD_STACK_SIZE 调大, 这里也要同步调大, 否则线程创建会失败。
  */
-#define RT_HEAP_SIZE (16*1024)
+#define RT_HEAP_SIZE (40*1024)
 static rt_uint8_t rt_heap[RT_HEAP_SIZE];
 
 RT_WEAK void *rt_heap_begin_get(void)
@@ -82,4 +88,3 @@ void rt_hw_console_output(const char *str)
 }
 
 #endif
-

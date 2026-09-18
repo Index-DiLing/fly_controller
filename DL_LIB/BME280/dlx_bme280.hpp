@@ -53,37 +53,44 @@ namespace dlx
 
         int32_t t_fine = 0; // 温度补偿中间量, 压力/湿度补偿复用它
 
-        /** 写一个寄存器 */
-        void writeReg(BME280_Reg reg, uint8_t value)
+        /** 写一个寄存器; 返回 false = I2C 传输异常 */
+        bool writeReg(BME280_Reg reg, uint8_t value)
         {
             uint8_t buf[2] = { static_cast<uint8_t>(reg), value };
             ByteBuffer w(buf, 2);
             w.write(buf, 2); // 标记 2 字节已写入, 否则 used()==0, IIC 一个字节都发不出
-            dev.write(w);
+            return dev.write(w);
         }
 
-        /** 从 reg 开始突发读 n 字节 */
-        void readRegs(BME280_Reg reg, uint8_t *out, uint16_t n)
+        /** 从 reg 开始突发读 n 字节; 返回 false = I2C 传输异常(out 已清零, 不可用) */
+        bool readRegs(BME280_Reg reg, uint8_t *out, uint16_t n)
         {
+            // 先把输出清零: I2C 出错(超时)时不会有数据写进来, 不清零的话调用方会读到栈上的旧值,
+            // 例如 ChipID 读失败却"碰巧"等于 0x60, 把不可用的气压计当成好的。
+            for (uint16_t i = 0; i < n; ++i) {
+                out[i] = 0u;
+            }
             uint8_t addr[1] = { static_cast<uint8_t>(reg) };
             ByteBuffer w(addr, 1);
             w.write(addr, 1); // 标记寄存器地址已写入, 否则 used()==0, 读操作不带寄存器地址
             ByteBuffer r(out, n);
-            dev.read(r, w, n);
+            return dev.read(r, w, n);
         }
 
         uint8_t readReg(BME280_Reg reg)
         {
-            uint8_t v;
+            uint8_t v = 0u;
             readRegs(reg, &v, 1);
             return v;
         }
 
         /** 读取全部校准参数并解析(含 H4/H5 的 12bit 符号扩展) */
-        void readCalib()
+        bool readCalib()
         {
             uint8_t buf[24];
-            readRegs(BME280_Reg::CalibStart, buf, 24);
+            if (!readRegs(BME280_Reg::CalibStart, buf, 24)) {
+                return false;
+            }
             calib.dig_T1 = (uint16_t)((uint16_t)buf[1] << 8 | buf[0]);
             calib.dig_T2 = (int16_t)((uint16_t)buf[3] << 8 | buf[2]);
             calib.dig_T3 = (int16_t)((uint16_t)buf[5] << 8 | buf[4]);
@@ -98,11 +105,15 @@ namespace dlx
             calib.dig_P9 = (int16_t)((uint16_t)buf[23] << 8 | buf[22]);
 
             uint8_t h1;
-            readRegs(BME280_Reg::CalibH1, &h1, 1);
+            if (!readRegs(BME280_Reg::CalibH1, &h1, 1)) {
+                return false;
+            }
             calib.dig_H1 = h1;
 
             uint8_t hb[7];
-            readRegs(BME280_Reg::CalibH2, hb, 7);
+            if (!readRegs(BME280_Reg::CalibH2, hb, 7)) {
+                return false;
+            }
             calib.dig_H2 = (int16_t)((uint16_t)hb[1] << 8 | hb[0]);
             calib.dig_H3 = (int8_t)hb[2];
             // H4/H5 是 12bit 有符号数: 高 8 位在 hb[3]/hb[5], 低 4 位在 hb[4]
@@ -111,6 +122,7 @@ namespace dlx
             calib.dig_H4 = (h4 & 0x0800) ? (int16_t)(h4 | 0xF000) : h4; // 12bit 符号扩展
             calib.dig_H5 = (h5 & 0x0800) ? (int16_t)(h5 | 0xF000) : h5;
             calib.dig_H6 = (int8_t)hb[6];
+            return true;
         }
 
         /* ==================== 修正算法(Bosch 官方公式) ==================== */
@@ -187,30 +199,41 @@ namespace dlx
          */
         bool init()
         {
-            writeReg(BME280_Reg::Reset, 0xB6);
+            if (!writeReg(BME280_Reg::Reset, 0xB6)) {
+                return false; // I2C 没通(超时/器件不在)
+            }
             delay_ms(2); // 复位后约 2ms 内不可访问
 
-            if (readReg(BME280_Reg::ChipId) != 0x60) {
+            uint8_t id = 0u;
+            if (!readRegs(BME280_Reg::ChipId, &id, 1) || id != 0x60) {
                 return false;
             }
 
-            readCalib();
+            if (!readCalib()) {
+                return false;
+            }
 
             // 湿度控制需在 ctrl_meas 之前写入才生效
-            writeReg(BME280_Reg::CtrlHum, static_cast<uint8_t>(BME280_Config::CtrlHum));
-            writeReg(BME280_Reg::CtrlMeas, static_cast<uint8_t>(BME280_Config::CtrlMeas));
-            writeReg(BME280_Reg::Config, static_cast<uint8_t>(BME280_Config::Config));
-            return true;
+            return writeReg(BME280_Reg::CtrlHum, static_cast<uint8_t>(BME280_Config::CtrlHum))
+                   && writeReg(BME280_Reg::CtrlMeas, static_cast<uint8_t>(BME280_Config::CtrlMeas))
+                   && writeReg(BME280_Reg::Config, static_cast<uint8_t>(BME280_Config::Config));
         }
 
         /**
          * @brief 阻塞读取气压/温度/湿度原始 ADC 值
          * @return EnviromentRaw 三个原始值, 可交给下面的修正函数换算
          */
-        EnviromentRaw getRaw()
+        /**
+         * @brief 阻塞读取气压/温度/湿度原始 ADC 值
+         * @param ok 可选输出: I2C 是否读成功。为 false 时这份数据不可信, 调用方应当跳过本次观测
+         */
+        EnviromentRaw getRaw(bool *ok = nullptr)
         {
             uint8_t raw[8]; // 0xF7~0xFE
-            readRegs(BME280_Reg::PressMsb, raw, 8);
+            const bool transferOk = readRegs(BME280_Reg::PressMsb, raw, 8);
+            if (ok != nullptr) {
+                *ok = transferOk;
+            }
 
             EnviromentRaw r;
             r.pressure    = ((uint32_t)raw[0] << 12) | ((uint32_t)raw[1] << 4) | ((uint32_t)(raw[2] >> 4));

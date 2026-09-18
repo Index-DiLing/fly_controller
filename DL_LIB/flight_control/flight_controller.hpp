@@ -182,6 +182,12 @@ namespace dlx
             return _debug;
         }
 
+        // 角速度环积分状态 (调试用; 单位 rad/s, 被 RATE_INT_LIMIT 钳位)
+        const Vector3f &rateIntegral() const
+        {
+            return _rate_int;
+        }
+
     private:
         // 周期保护: 无效 dt -> 默认 500Hz, 并限幅
         static float sanitizeDt(float dt)

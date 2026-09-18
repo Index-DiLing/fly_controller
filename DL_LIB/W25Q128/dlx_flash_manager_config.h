@@ -260,19 +260,35 @@ namespace dlx
         uint16_t crc;       ///< 除本字段外整个结构体的 CRC16
         uint32_t sessionId; ///< 会话号(每次上电 +1), 用于把条目归到某一次上电
         uint32_t seq;       ///< 会话内条目序号, 从 1 开始
-        // ------------------------- 业务数据(示例) -------------------------
-        uint32_t tickMs;    ///< 时间戳 [ms]
-        float    rollRad;   ///< 姿态 roll [rad]
-        float    pitchRad;  ///< 姿态 pitch [rad]
-        float    yawRad;    ///< 姿态 yaw [rad]
-        float    gyroX;     ///< 机体角速度 x [rad/s]
-        float    gyroY;     ///< 机体角速度 y [rad/s]
-        float    gyroZ;     ///< 机体角速度 z [rad/s]
-        float    throttle;  ///< 归一化油门
-        uint16_t motor[4];  ///< 四个电机输出
-        uint16_t flags;     ///< 状态位
+        // ------------------------- 业务数据(发布版 flight log) -------------------------
+        // 这 132 字节就是"一条飞行日志": 姿态/角速度/比力/设定值/输出/高度/状态位。
+        // 状态位与事件位的具体含义见 flight_config_struct.hpp 的 kLogFlag*/kLogEvent*。
+        // 注意: 改字段(顺序/类型/个数)会让尺寸变化, 旧数据判为几何不匹配, 需要 format() 一次。
+        uint32_t tickMs;          ///< 上电以来的毫秒计数
+        uint16_t flags;           ///< 状态位(电平型): 链路/传感器/使能/日志状态…
+        uint16_t events;          ///< 事件位(边沿型): 解锁/停机/失控/饱和…
+        uint16_t linkAgeMs;       ///< 距最近一次有效遥控指令的毫秒数
+        uint16_t loopPeriodUs;    ///< 本周期控制循环实测周期 [us]
+        float    quat[4];         ///< EKF 姿态四元数(机体 -> 世界, w,x,y,z)
+        float    bodyRate[3];     ///< 机体角速度 [rad/s]
+        float    accelG[3];       ///< 机体比力 [g]
+        float    rateSetpoint[3]; ///< 期望机体角速度 [rad/s]
+        float    torque[3];       ///< 期望力矩 [N*m]
+        float    targetPitchDeg;  ///< 遥控期望俯仰 [deg]
+        float    targetRollDeg;   ///< 遥控期望横滚 [deg]
+        float    targetHeightM;   ///< 期望高度 [m](定高预留, 目前 0)
+        float    throttle;        ///< 控制输出油门(0~1)
+        float    manualThrottle;  ///< 遥控手动油门(0~1)
+        float    heightM;         ///< EKF 高度 [m](向上为正)
+        float    vertVelMps;      ///< EKF 垂向速度 [m/s]
+        float    baroRelM;        ///< 气压高度(相对起飞点)[m]
+        float    baroAbsM;        ///< 气压高度(绝对, 未减基准)[m]
+        float    gyroBias[3];     ///< EKF 估计的陀螺零偏 [rad/s](每 N 条才更新一次)
+        uint16_t motor[4];        ///< 四路 DShot 输出(物理通道顺序)
     };
     static_assert(offsetof(LogEntry, crc) == 2, "crc 字段必须紧跟 type/reserved");
+    /** 业务字段必须排得下整数个 4 字节, 否则帧里会出现编译器填充 */
+    static_assert(sizeof(LogEntry) % 4 == 0, "LogEntry 尺寸必须是 4 的整数倍(避免结构体填充)");
 
     /**
      * @brief 日志槽头(帧: 0xAA + 本结构体 + 0x00)
@@ -304,19 +320,19 @@ namespace dlx
     /**
      * 单次日志(一个会话)最多占用几个槽 —— 也就是"单次日志上限"。
      *
-     *  预留区大小 = 本值 × FLASH_LOG_SLOT_SIZE (默认 8 × 128KB = 1MB),
+     *  预留区大小 = 本值 × FLASH_LOG_SLOT_SIZE (默认 32 × 128KB = 4MB),
      *  init() 会把整块预留区一次擦干净(每擦完一个 64KB 块回调一次进度),
      *  所以上电擦除耗时 ≈ 本值 × 0.3s(典型值; 最坏 本值 × 4s)。
      *
      *  单次会话可写条目数 = 本值 × FLASH_LOG_ENTRIES_PER_SLOT
-     *                      (默认 8 × 2184 = 17472 条, 按每条约 128B 折算约 2.1MB 数据)。
+     *                      (默认 32 × 885 = 28320 条; 发布版按 50Hz 记一条 ≈ 9.4 分钟飞行数据)。
      *  Halt 策略写满预留区后返回 FLASH_LOG_FULL;
      *  OverwriteOldest 策略则继续占用后面的槽(现场擦最旧会话), 只报提示性异常。
      *
      *  取值范围 1 ~ FLASH_LOG_SLOT_COUNT(127); 运行时可用 setSessionSlotLimit() 改, 下一次 init 生效。
      *  注意: 预留了但没用到的槽, 下次上电会被重新擦一遍(只多花时间, 磨损增加有限)。
      */
-    constexpr uint32_t FLASH_LOG_SESSION_SLOT_LIMIT = 8;
+    constexpr uint32_t FLASH_LOG_SESSION_SLOT_LIMIT = 32;
 
     /** dropSessions() 的 count 参数: 丢掉全部历史会话(只保留当前正在写的这次, 腾出的槽给它用) */
     constexpr uint32_t FLASH_DROP_ALL_SESSIONS = 0xFFFFFFFFu;

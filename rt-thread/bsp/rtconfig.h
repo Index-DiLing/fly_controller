@@ -27,7 +27,10 @@
 
 // <o>the stack size of main thread<1-4086>
 //  <i>Default: 512
-#define RT_MAIN_THREAD_STACK_SIZE     13312
+//  发布版: main 线程里跑整个控制环(500Hz) + 16 维 EKF, 静态最坏调用链约 19KB
+//  (main 3.1KB + runFlightStack 8.8KB + EKF kalmanUpdate 6.9KB, GCC -O3 实测)
+//  取 24KB 留出中断嵌套与工具链差异的余量; 改小之前请先用栈水位线量一遍。
+#define RT_MAIN_THREAD_STACK_SIZE     24576
 
 // </h>
 
