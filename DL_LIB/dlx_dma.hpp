@@ -139,6 +139,35 @@ namespace dlx
         }
 
         /**
+         * @brief 还剩多少个数据项没搬完(NDTR 的原始值)
+         *
+         * 循环模式下它就是"距离绕回起点还有多少", 于是 **已写位置 = 容量 - 剩余**。
+         * 这是 IDLE + DMA 收帧唯一需要的运行时信息(见 dlx_usart.hpp 的 USARTDmaReceiver):
+         * 没有它就不知道"这次突发到底收了多少字节、从哪个下标开始"。
+         */
+        inline uint16_t remaining()
+        {
+            return static_cast<uint16_t>(DMA_GetCurrDataCounter(getDMA_Stream()));
+        }
+
+        /**
+         * @brief 传输完成标志是否置位
+         *
+         * 循环模式下 TC 置位 = **指针至少绕回起点一次** = 有一段数据在我们取走之前就被新数据
+         * 覆盖了。收帧场景里这就是"溢出", 必须能看见 —— 否则表现是"偶尔少了一帧",
+         * 而没有任何地方会报错。
+         */
+        inline bool transferCompleteFlag()
+        {
+            return DMA_GetFlagStatus(getDMA_Stream(), getDMA_FLAG_TC()) == SET;
+        }
+
+        inline void clearTransferCompleteFlag()
+        {
+            DMA_ClearFlag(getDMA_Stream(), getDMA_FLAG_TC());
+        }
+
+        /**
          * @brief 按 DMAModeProfile + 外设地址配置 DMA, 内存侧使用构造时传入的 ByteBuffer
          * @param mode 模式配置, 见 dlx_dma_profile.hpp
          * @param peripheralBaseAddr 外设寄存器地址(如 (uint32_t)&USART1->DR)
@@ -358,8 +387,18 @@ namespace dlx
             stream->M0AR = reinterpret_cast<uint32_t>(buffer.src);
         }
 
+        bool isComplete()
+        {
+            return DMA_GetCmdStatus(getDMA_Stream()) == RESET ||
+                   DMA_GetFlagStatus(getDMA_Stream(), getDMA_FLAG_TC()) != RESET;
+        }
+
         void wait()
         {
+            //没开启直接返回,否则一直等到TCIF.
+            if(DMA_GetCmdStatus(getDMA_Stream()) == RESET){
+                return;
+            }
             while (DMA_GetFlagStatus(getDMA_Stream(), getDMA_FLAG_TC()) == RESET);
         }
 

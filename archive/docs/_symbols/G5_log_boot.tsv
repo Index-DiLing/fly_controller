@@ -1,0 +1,90 @@
+app_log_thread.hpp	include	(全部 include): app_flight_shared.hpp / app_stack.hpp / app_log_channel.hpp / W25Q128/dlx_flash_manager.hpp / dlx_gpio.hpp / dlx_dma.hpp / #pragma once	提供共享区与 logQueuePop、栈水位线、两条信箱、FlashManager 完整定义(要调 appendLog)、心跳灯 GPIO、DMA wait/reset/start	-	FlashManager 必须完整定义不能只前置声明; 无 RTOS 之外的依赖
+app_log_thread.hpp	namespace	dlx	本文件全部符号所在命名空间	app_flight_stack.hpp:79	-
+app_log_thread.hpp	namespace	logcfg	本线程私有编译期常量集中处, 暂时与 config 脱钩	logThreadEntry():175	先写字面值, 旁边 TODO(cfg) 标将来接回的键
+app_log_thread.hpp	constexpr	MAX_ENTRIES_PER_RUN	一轮最多排空 24 条固定长日志	logThreadEntry():184	★TODO(cfg): cfg::log::kMaxEntriesPerRun; app_flight_shared.hpp:25 还有一份同名 kMaxEntriesPerRun 零调用方
+app_log_thread.hpp	constexpr	TEXT_RESERVE_BYTES	给文本+状态行留的保底空间 600B, 固定长帧排空时保留, 免得队列积压饿死文本	logThreadEntry():207	必须 >= SIMPLE_LOG_HEAD_BYTES+POOL_BYTES(4+512=516), 有 static_assert 守
+app_log_thread.hpp	constexpr	FLIGHT_LOG_FRAME_BYTES	一条固定长日志帧 142B(负载 140 + 帧头 2)	logThreadEntry():207	与 release_header.h 的 kFlightLogFrameBytes 同值
+app_log_thread.hpp	constexpr	SIMPLE_LOG_HEAD_BYTES	SimpleLog 帧头 4B(2B header + 2B len); KSP 协议常量	logThreadEntry():110,247,249	-
+app_log_thread.hpp	constexpr	EXCEPTION_FRAME_BYTES	一条异常帧 4B(2B header + 2B code); KSP 协议常量	logThreadEntry():220,235	-
+app_log_thread.hpp	constexpr	MAX_EXCEPTIONS_PER_RUN	一轮最多发 8 条异常; 空间不够时按 remaining/4 再降容量	logThreadEntry():143,144,221,223,224	先算容量再取, 避免"出了队却发不出去"
+app_log_thread.hpp	constexpr	HEARTBEAT_MS	心跳灯翻转周期 500ms, 与有没有日志出口无关	logThreadEntry():175	★心跳在日志线程里翻 ⇒ "日志停了灯也不闪"
+app_log_thread.hpp	constexpr	PERF_REPORT_MS	串口模式发 PerfMonitorW 的周期 200ms	logThreadEntry():270	TODO(cfg): cfg::time::log::kPerfReportMs
+app_log_thread.hpp	constexpr	DEBUG_STAT_MS	运行状态文本行周期 1000ms, 0=关	logThreadEntry():327	条件: !=0 且距 lastStatMs 已到
+app_log_thread.hpp	constexpr	STACK_REPORT_MS	栈水位线打印周期 10000ms	logThreadEntry():381	仅当开关打开才有意义
+app_log_thread.hpp	constexpr	STACK_WATERMARK_ENABLED	栈水位打印开关, 默认 false(量栈预算时才打开)	logThreadEntry():381	TODO(cfg): cfg::diag::kLogStackWatermark
+app_log_thread.hpp	static-assert	TEXT_RESERVE_BYTES >= SIMPLE_LOG_HEAD_BYTES + textmbox::POOL_BYTES	编译期核对保底空间放得下一帧整池文本, 否则文本帧会被截断	编译期	不产生运行期代码
+app_log_thread.hpp	struct	LogThreadCtx	日志线程接线上下文; fs/serialDma/debugStream 三者决定走哪条分支	app_flight_stack.hpp:79,955	线程 rt_thread_create("logger",...,3072,26,20)
+app_log_thread.hpp	member	LogThreadCtx::sh	FlightShared* 共享区(logQueue/perf/tidMain/tidLink/tidLog)	app_flight_stack.hpp:955 / logThreadEntry():184	本线程读它拿队列、perf、栈水位句柄
+app_log_thread.hpp	member	LogThreadCtx::fs	非空 = 飞行模式: 每轮 appendLog(entry,error) 写 flash 并累计 logSum	logThreadEntry():181,187	app_flight_stack.hpp:956 由 flightMode 决定
+app_log_thread.hpp	member	LogThreadCtx::serialDma	非空 = 串口出口: 每轮 wait() 回收上轮, 有内容才 reset(used)+start()	logThreadEntry():199,394	DMA::wait 自己看 EN, 不需要 busy 标志
+app_log_thread.hpp	member	LogThreadCtx::txBuf	那条 txBuf: reset() 后 remaining() 决定各步发不发得出, 一轮一次 DMA	logThreadEntry():200,247	2048B, 与 DMA 绑定
+app_log_thread.hpp	member	LogThreadCtx::protocol	生成代码报文对象, 串口模式下唯一使用者	logThreadEntry():212,230	writeLogEntry/SimpleLogW/DLXExceptionW/PerfMonitorW
+app_log_thread.hpp	member	LogThreadCtx::sem	等 5ms 周期定时器 rt_sem_release 的信号量	app_flight_stack.hpp:960 / logThreadEntry():166	RT_WAITING_FOREVER
+app_log_thread.hpp	member	LogThreadCtx::debugStream	true = 走串口分支(!flightMode); 与 fs 同为空则走无出口分支	app_flight_stack.hpp:961 / logThreadEntry():195	-
+app_log_thread.hpp	member	LogThreadCtx::seq	调试流条目自增序号(flash 模式由文件系统填)	logThreadEntry():209,210,341	串口分支 entry.seq = ++ctx->seq
+app_log_thread.hpp	member	LogThreadCtx::lastPerfMs	上次发负载统计的时刻, 间隔 200ms	logThreadEntry():270,271	每轮比较, 到期才发
+app_log_thread.hpp	member	LogThreadCtx::lastStackMs	上次打栈水位线的时刻, 间隔 10s	logThreadEntry():162,381	初值 = 启动时刻; 开关默认关
+app_log_thread.hpp	member	LogThreadCtx::lastStatMs	上次打 [Stat]/[Link]/[Perf] 状态行的时刻, 间隔 1000ms	logThreadEntry():163,327	与 lastStackMs 同初值
+app_log_thread.hpp	function	appendTextLine()	就地追加一条 SimpleLog 帧(不 reset): 剩余<=4B 或 vsnprintf<=0 整条放弃; 奇数长度补空格	app_log_thread.hpp:338,355,369,383	logLine 只投信箱(下一轮 5ms 才拷); 本线程就是 owner 所以直接按写指针追加
+app_log_thread.hpp	function	discardMailbox()	排空两条信箱: 异常 take 到空(scratch 8 条/次) + 文本 discardAll; channel 或成员 nullptr 直接返回	app_log_thread.hpp:194,400	★必须做: 投递方一直在投, 不取走池子永久满且丢弃计数骗人
+app_log_thread.hpp	function	logThreadEntry()	5ms 唤醒; 心跳灯 500ms 翻转; 三分支: fs 写 flash 并丢信箱 / debugStream 串口成帧发 DMA / 无出口排空队列	app_flight_stack.hpp:962	每轮固定 6 步: 固定长帧(留 TEXT_RESERVE 保底) -> 异常帧(先按空间算容量) -> 信箱文本(整池一帧, 一次性优先) -> Perf(200ms) -> 状态行(1s) -> 提交 DMA(used>0 才 reset 紧跟 start); 串口分支独占 serialDma/txBuf/protocol+两信箱
+app_exception_handler.h	include	(全部 include): stdint.h / dlx_exception_recorder.hpp / dlx_delay.hpp / dlx.hpp / release_header.h / #pragma once	ExceptionRecorder(重载声明用)、ReleaseContext 与 logLine	dlx_delay.hpp 在本头未使用任何符号(历史遗留)	★注释点名: 这里必须与 .cpp 的定义签名逐字一致, 否则变成重载只在链接期报错
+app_exception_handler.h	function	ENABLE_EXCEPTION_TEXT() / DISABLE_EXCEPTION_TEXT() / IS_EXCEPTION_TEXT()	文本异常渠道开关的置位/清零/查询声明	ENABLE: release.cpp:153	DISABLE 与 IS 全仓无调用方
+app_exception_handler.h	function	TEXT_EXCEPTION_HANDLER(ExceptionCode)	把异常码投成一行文本(实现就是 logLine 的薄包装)	app_exception_handler.cpp:98	因此异常文本与普通文本走同一条信箱同一终点
+app_exception_handler.h	function	ENABLE_EXCEPTION_DLX() / DISABLE_EXCEPTION_DLX() / IS_EXCEPTION_DLX()	DLX 异常上日志渠道的开关	ENABLE: app_flight_stack.hpp:2101	★唯一开启点; DISABLE 与 IS 无调用方
+app_exception_handler.h	function	DLX_EXCEPTION_HANDLER(ExceptionCode)	投递到 exceptionMailbox(未接线则丢弃)	app_exception_handler.cpp:101	-
+app_exception_handler.h	function	DLX_HANDLE_EXCEPTION(ExceptionCode)	统一异常出口: 按 4 个开关分派	release.cpp:227,254; app_link_thread.hpp:350,496,499; app_sensors.hpp:682,737,789,856,900,908,929,955; app_flight_stack.hpp:370,391,1415,1446,1453,1476,1580,1590	-
+app_exception_handler.h	function	DLX_HANDLE_EXCEPTION(ExceptionRecorder&)	遍历记录器逐个转调	无调用方	★全仓零调用方(死代码)
+app_exception_handler.cpp	include	app_exception_handler.h	本文件唯一的包含	-	.eide/eide.yml 已收录本 .cpp(源码注释里"仍不在构建里"的说法已过期)
+app_exception_handler.cpp	namespace	<anonymous>	内部链接命名空间, 包住 4 个 PRIVATE_*_ENABLE 开关	-	4 个 volatile bool 无锁
+app_exception_handler.cpp	global	PRIVATE_TEXT_EXCEPTION_ENABLE	文本异常渠道开关, volatile bool 初值 false	写 :15,:20 -> 读 :25,:97	匿名命名空间, 内部链接
+app_exception_handler.cpp	global	PRIVATE_DLX_EXCEPTION_ENABLE	DLX 异常上日志渠道开关, 初值 false	写 :35,:40 -> 读 :45,:100	唯一开启点 app_flight_stack.hpp:2101
+app_exception_handler.cpp	global	PRIVATE_RADIO_EXCEPTION_ENABLE	无线异常渠道开关, 初值 false	写 :59,:64 -> 读 :69,:106	★无任何开启点; 对应 handler 是空函数体
+app_exception_handler.cpp	global	PRIVATE_FLASH_EXCEPTION_ENABLE	Flash 异常渠道开关, 初值 false	写 :78,:83 -> 读 :87,:103	★无任何开启点; 对应 handler 是空函数体
+app_exception_handler.cpp	function	ENABLE_EXCEPTION_TEXT()	置开关 true, 只写一个 volatile bool	release.cpp:153	非 Flight 模式判定后立刻打开 => 串口出声
+app_exception_handler.cpp	function	DISABLE_EXCEPTION_TEXT() / IS_EXCEPTION_TEXT()	清零 / 返回开关	无调用方	全仓无人查询(handler 直接读变量)
+app_exception_handler.cpp	function	TEXT_EXCEPTION_HANDLER()	把异常码投成一行文本 "[Exp ] ExceptionCode: 0x%04X"	:98	不关心 logLine 是否真的有效(只投递不发送)
+app_exception_handler.cpp	function	ENABLE_EXCEPTION_DLX()	置 PRIVATE_DLX_EXCEPTION_ENABLE=true	app_flight_stack.hpp:2101	★唯一开启点(进控制环之前); 无参版本, 声明与定义签名必须逐字一致
+app_exception_handler.cpp	function	DISABLE_EXCEPTION_DLX() / IS_EXCEPTION_DLX()	清零 / 返回开关	无调用方	-
+app_exception_handler.cpp	function	DLX_EXCEPTION_HANDLER()	取 logContext->channel->exceptionMailbox 并 push(code); 未接线直接丢弃	:101	★忽略 push 返回值(信箱 16 槽满时静默丢); 不碰 txBuf/协议/DMA
+app_exception_handler.cpp	function	ENABLE_EXCEPTION_RADIO() / DISABLE_EXCEPTION_RADIO() / IS_EXCEPTION_RADIO()	无线异常渠道开关	无调用方	★零调用者, 且 .h 中无声明
+app_exception_handler.cpp	function	RADIO_EXCEPTION_HANDLER()	空函数体, 收到码什么都不做	:107	仅当开关为 true 时被调, 而开关永不为 true
+app_exception_handler.cpp	function	ENABLE_EXCEPTION_FLASH() / DISABLE_EXCEPTION_FLASH() / IS_EXCEPTION_FLASH()	Flash 异常渠道开关	无调用方	★零调用者, 且 .h 中无声明
+app_exception_handler.cpp	function	FLASH_EXCEPTION_HANDLER()	空函数体	:104	打开也无效: 体内无任何语句
+app_exception_handler.cpp	function	DLX_HANDLE_EXCEPTION()(ExceptionCode)	按顺序查 4 个开关: TEXT -> logLine 一行; DLX -> 投 exceptionMailbox; FLASH/RADIO -> 空体	见 app_exception_handler.h 那行列出的全部调用点	统一异常出口; 无锁 volatile bool, 可在任意线程/中断调用
+app_exception_handler.cpp	function	DLX_HANDLE_EXCEPTION()(ExceptionRecorder&)	遍历 rec.size() 逐个转调 ExceptionCode 重载	无调用方	★零调用方; 上电期记录器走 armPreconditionsMet 而不是这里
+app_boot_mode.hpp	include	(全部 include): flight_config.hpp / release_header.h / dlx_gpio.hpp / dlx_delay.hpp / #pragma once	cfg::ground::kWaitTimeoutMs 与 kBlinkMs、cfg::hw::jumper、ReleaseContext/BootDecision/logLine/replyGround、GPIO、delay_us	delay_us():43	让引脚电平稳定后再读回
+app_boot_mode.hpp	namespace	dlx	本文件同名命名空间, 全部符号为 inline	release.cpp:144	原来是 static, 现全部 inline
+app_boot_mode.hpp	function	groundJumpersPresent(bool&,bool&)	PB8/PB9 两相检测: A 输出低+B 上拉读, 再反过来, 每相 delay_us(50); 结束两脚恢复 IN_UP, 返回 aLow 或 bLow	app_boot_mode.hpp:128	兼容"一个跳线帽短接"与"两脚各自接 GND"; aLow/bLow 只用于上电日志区分插歪/接触不良
+app_boot_mode.hpp	struct	BootCommand	上电阶段收到的"解锁"命令(解析回调到判定循环的载体)	:69,:78,:138	栈上局部量, 生命周期覆盖等待循环
+app_boot_mode.hpp	member	BootCommand::got	volatile bool: 回调置 true, 判定循环取到后立刻清 false	写 :73,:88 -> 读清 :159,:160	volatile 因为回调在 protocol.check() 上下文
+app_boot_mode.hpp	member	BootCommand::mode	命令里的目标模式(0/1/2); 非法为 0xFF	写 :70,:82,:84 -> 读 :161,:162,:168	<=2 才采纳
+app_boot_mode.hpp	member	BootCommand::op	收到的原始 op(非 Unlock 时用来报"上位机发的是什么")	写 :71,:86 -> 读 :170,:172,:173	-
+app_boot_mode.hpp	member	BootCommand::legacy	true = 来自旧版 UnBlock(param) 报文	写 :72,:87 -> 读 :164	只影响日志措辞
+app_boot_mode.hpp	function	onBootUnBlock(UnBlock*,void*)	旧版 UnBlock 回调: mode=u->param(), op=Unlock, legacy=true, got=true	注册 :139 / 被 DL_LIB/dlx.hpp:106 protocol.check 调用	★回调里只记状态, 不打印不发送(那一刻报文对象还指着解帧缓冲)
+app_boot_mode.hpp	function	onBootGroundCmd(GroundCmd*,void*)	GroundCmd 回调: op==Unlock(1) 或 op==0 取 cmd->mode(), 否则 mode=0xFF 视为无效	注册 :140 / 被 DL_LIB/dlx.hpp:130 调用	op 表对不上时由判定循环补一行日志 + 回 BadArgument
+app_boot_mode.hpp	function	bootModeName(BootMode)	BootMode -> 中文名(飞行/串口调试/日志管理/未知)	app_boot_mode.hpp:165	只用于日志
+app_boot_mode.hpp	function	decideBootMode(ReleaseContext&)	跳线帽没接 -> 立即 Flight(完全不读串口); 接上则注册两回调+清 uartRx+循环 drainDlx 等 Unlock	release.cpp:144	输入=跳线帽/串口命令/超时; 输出=Flight/SerialDebug/LogManage; ★kWaitTimeoutMs=0 => 超时分支永不成立, "超时落 LogManage"实际不会发生(一直等); 无效命令回 Unlock+BadArgument 后 continue
+app_boot_report.hpp	include	(全部 include): flight_config.hpp / release_header.h / dlx_spi.hpp / W25Q128/dlx_w25q128.hpp / #pragma once	cfg 各项、logLine、SPI 与 SPI_CR1 位段、W25Q128 只读探测	-	全部函数只读: 不配置外设、不改状态; 唯一例外是把读到的东西打出来
+app_boot_report.hpp	namespace	dlx	本文件同名命名空间, 全部函数 inline	app_flight_stack.hpp:37	改 inline 以避免 -Wunused-function
+app_boot_report.hpp	function	apb1ClockHz()	RCC_GetClocksFreq 取 PCLK1_Frequency(SPI2/SPI3、USART2..)	logFlashProbe():235 / app_sensors.hpp:412	每次调用都读 RCC 寄存器
+app_boot_report.hpp	function	apb2ClockHz()	取 PCLK2_Frequency(SPI1、USART1、TIM1)	logUsartStatus():187 / app_bringup.hpp:123	-
+app_boot_report.hpp	function	logResetCause()	遍历 kFlags 读复位标志, 拼成 POR+PIN 形式一行, 读完立即 RCC_ClearFlag()	logSystemReport():85	★标志是保持型, 不清会"每次都报 IWDG 复位"; text[64] 剩余不足 8B 就停
+app_boot_report.hpp	struct	ResetFlag	logResetCause 内局部 static const 表项类型 {uint8_t flag; const char* name}	kFlags[]:52	函数局部类型, 不对外可见
+app_boot_report.hpp	constexpr	kFlags[]	7 项复位标志表: POR/BOR/PIN/SOFT/IWDG/WWDG/LPWR	logResetCause():59,60,64	-
+app_boot_report.hpp	function	logSystemReport()	打版本/时钟树/SystemCoreClock + logResetCause + 堆水位 + 3 行关键 cfg	app_flight_stack.hpp:2004	排查"以为配了其实没配"
+app_boot_report.hpp	function	logSpiStatus()	从 profile 解期望 BR 并与 SPIx->CR1 回读比对, 报使能/主机/波特(pclkHz>>(BR+1))	app_boot_report.hpp:235 / app_bringup.hpp:123 / app_sensors.hpp:412	只读寄存器; 必须在该外设 init() 之后调用才看得到真值
+app_boot_report.hpp	function	logDshotTiming()	按 setDshot 同一算式打期望预分频/计数时钟/单 bit/理论帧率; cntClk==0 或 >65536 时只报"配不出时基会死等"	release.cpp:289	★必须打在 FlightStack 构造(成员 dshot{timer1.setDshot})之前, 否则卡死时一行日志都没有; 注意"理论帧率=realHz/22"少除了一次每 bit 的 40 计数
+app_boot_report.hpp	function	logDshotRegisterCheck()	回读 TIM1->PSC/ARR/CR1.CEN/BDTR.MOE 与期望比对; kTimer != TIM1_Up_DIV1 时跳过	app_flight_stack.hpp:425	必须打在 setDshot() 之后; MOE 开着报"开(!)"
+app_boot_report.hpp	function	logUsartStatus()	USART1->BRR 反算波特率 + CR1/CR3 的 UE/TE/RE/RXNEIE/DMAT/DMAR 位 + 四个缓冲尺寸	app_flight_stack.hpp:426	F4: 波特率 = 外设时钟 / BRR
+app_boot_report.hpp	function	logThreadReport()	打主线程优先级/栈, link/logger 线程栈与建线程后堆已用/峰值/空闲	app_flight_stack.hpp:989	#if CFG_FEATURE_LINK: 链路编译期关掉时报"关闭(编译期)"而不是失败(主动关掉 != 坏掉)
+app_boot_report.hpp	function	logFlashProbe()	只读探测 W25Q128: SPI2 init + logSpiStatus + releasePowerDown + readJEDEC/readStatus1	app_flight_stack.hpp:2038	★刻意不调 flash.init()(会写状态寄存器/清块保护); 0x000000 与 0xFFFFFF 都算无应答
+app_bringup.hpp	include	(全部 include): rtthread.h / flight_config.hpp / release_header.h / app_exception_handler.h / app_boot_report.hpp / dlx_spi.hpp / BMI088/dlx_bmi088.hpp / #pragma once	cfg::hw::imu 引脚与 SPI、logLine、ExceptionRecorder(借 app_exception_handler.h 引入)、logSpiStatus/apb2ClockHz、SPI 类、BMI088	-	v2.1: 用栈内 ExceptionRecorder 取代 v2.0 的 BringUpReport 表
+app_bringup.hpp	namespace	dlx	本文件同名命名空间	app_flight_stack.hpp:25	-
+app_bringup.hpp	constexpr	kArmBlockingAlways[2]	与飞行模式无关的硬门槛码表: POWER_ADC_FAILED / SCHED_THREAD_START_FAILED	armPreconditionsMet():63,64	★新增必需件只能往表里加码; bool 方案里"忘了加进门槛"是静默的(v2.0 修过的洞)
+app_bringup.hpp	constexpr	kArmBlockingInFlight[5]	只在飞行模式拦解锁的码表: IMU_NOT_FOUND/SELFTEST_FAILED/CHIP_ID_ACCEL/CHIP_ID_GYRO/SPI_ERROR	armPreconditionsMet():71,72	台架(串口调试)允许带着这些故障试车
+app_bringup.hpp	function	armPreconditionsMet(ExceptionRecorder&,bool)	先查 kArmBlockingAlways, 命中即 false; !flightMode 直接 true; 飞行模式再查 kArmBlockingInFlight	app_flight_stack.hpp:1383	上电期硬门槛, 控制环每圈算一次并 publish 给链路回 DL_ACK; v2.0 的 requiredAllOk 让"台架放行"永远生效不了, v2.1 按注释本意实现
+app_bringup.hpp	function	bringUpImu(SPI&,BMI088&,ExceptionRecorder&)	spi/dev 初始化+自检; 失败时按回读 CHIP_ID(0x1E/0x0F) 分类抛不同异常码; 打两行诊断+logSpiStatus; 返回 dev.init 结果	app_flight_stack.hpp:408	只回答"起来了没有"; 是否禁止解锁由 armPreconditionsMet 决定; IMU 是必需件
+# 不确定项: IS_EXCEPTION_*/DISABLE_EXCEPTION_* 与 ENABLE_EXCEPTION_RADIO/FLASH 的"无调用方"来自全仓 grep(仅命中声明/定义), 未排除宏拼接式调用
+# 不确定项: 源码注释称 app_exception_handler.cpp 不在 .eide/eide.yml; 实测已收录, 该注释已过期
+# 不确定项: app_log_thread.hpp 用到的 logQueuePop/logQueueDrain/writeLogEntry/perfAddLocked/paintStackWatermark/stackUsedBytes 定义在别处, 非本文件符号故未单列

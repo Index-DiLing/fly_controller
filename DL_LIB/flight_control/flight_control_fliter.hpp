@@ -134,9 +134,19 @@ namespace dlx
         bool  freeze_gyro_bias_when_dynamic{false};
         float baro_sigma_m{0.3f};         // 气压高度噪声 [m]
         float rangefinder_sigma_m{0.05f}; // 超声波/激光测距高度噪声 [m] (近地面精度高)
+        float range_gate_sigma{0.0f};     // 测距的马氏门限 [σ], 0=不门限; 见 updateRangeHeight 的说明
         float gps_pos_sigma_m{2.0f};      // GNSS 位置噪声 [m]
         float gps_vel_sigma_mps{0.3f};    // GNSS 速度噪声 [m/s]
         float mag_sigma{0.05f};           // 磁力计噪声 [uT]
+
+        // ---- 水平速度观测(光流/GNSS)的门限与限幅 ----
+        // 这个滤波器此前**没有任何水平速度/位置量测**(见文件头), 所以这几个参数是把它接上
+        // 外部速度源时唯一的安全网, 缺一个都可能"一次坏观测把状态打飞"。
+        float flow_vel_sigma_mps{0.2f};   // 水平速度观测噪声 [m/s]
+        float flow_inno_limit_mps{0.0f};  // 水平速度 innovation **逐轴**限幅 [m/s], 0=不限幅
+        float flow_gate_sigma{0.0f};      // 水平速度**马氏**门限 [σ], 0=不门限
+        float vel_xy_var_max{25.0f};      // 水平速度协方差上限 [(m/s)^2]; <=0 = 不夹
+        float pos_xy_var_max{100.0f};     // 水平位置协方差上限 [m^2];    <=0 = 不夹
 
         // ---- 零偏是否参与估计 ----
         // 陀螺零偏(滚转/俯仰分量)可由加速度计倾角修正微弱可观, 故默认开;
@@ -145,7 +155,10 @@ namespace dlx
         bool estimate_accel_bias{false};
 
         // ---- 零偏限幅 (抑制不可观测方向的漂移) ----
-        float gyro_bias_limit{0.3f};      // [rad/s]
+        // 0.3 -> 0.03 (2026-10-02): 0.3 rad/s ≈ 17°/s 的陀螺零偏在物理上根本不可能(消费级 IMU
+        // 温漂典型 0.01~0.05 rad/s), 把上限放到那么高等于是**没有上限**; 而水平方向接上速度观测
+        // 以后, 零偏与速度是耦合可观的, 一个被拖到 0.3 的零偏会持续往速度里灌假加速度。
+        float gyro_bias_limit{0.03f};     // [rad/s]
         float accel_bias_limit{2.0f};     // [m/s^2]
 
         // ---- 初始协方差 (对角线) ----
@@ -454,23 +467,31 @@ namespace dlx
         }
 
         // 气压高度 [m] (向上为正, 与状态 pz 同号; 以起飞点/海平面为参考系)
-        void updateBarometer(float altitude_m)
+        bool updateBarometer(float altitude_m)
         {
-            applyHeightUpdate(altitude_m, _params.baro_sigma_m);
+            return applyHeightUpdate(altitude_m, _params.baro_sigma_m);
         }
 
         // 超声波 / 激光测距: 垂直方向到地面的高度 AGL [m].
         //   观测的世界系 z = ground_z + range. 默认 ground_z=0 表示 pz 以地面为原点;
         //   若 pz 以起飞点为原点且地面在起飞点下方 pGround_z, 则传 ground_z=pGround_z.
-        void updateRangeHeight(float height_m, float ground_z = 0.0f)
+        //
+        // 为什么要门限: 测距是**唯一**会突然给你一个差好几米的高度源 —— 镜面反射、飞出量程、
+        //   斜射到地面边缘, 都会给出"看起来合理但完全错误"的值。而高度环是闭环,
+        //   一次坏观测会让飞机真的去追那个错高度。气压计相反: 它慢但不会跳。
+        // @return false = 被门限拒绝(调用方应上报 RANGE_INVALID 并计数)
+        bool updateRangeHeight(float height_m, float ground_z = 0.0f)
         {
-            applyHeightUpdate(ground_z + height_m, _params.rangefinder_sigma_m);
+            return applyHeightUpdate(ground_z + height_m, _params.rangefinder_sigma_m,
+                                     _params.range_gate_sigma);
         }
 
         // 高度类量测的统一入口 (气压 / 超声波 / 其它高度源), 均作为 z 位置观测
-        void updateHeightSource(float altitude_m, float sigma_m)
+        // 注意: 这条入口**不门限**(gate 传默认 0) —— 气压计本来就是慢而可信的源,
+        //       给它加门限只会在快速升降时把真观测挡掉。要门限请用 updateRangeHeight。
+        bool updateHeightSource(float altitude_m, float sigma_m)
         {
-            applyHeightUpdate(altitude_m, sigma_m);
+            return applyHeightUpdate(altitude_m, sigma_m);
         }
 
         // GNSS 本地切平面位置 (ENU [m]) 与地速 (ENU [m/s]). 可单独调用其一.
@@ -500,6 +521,108 @@ namespace dlx
             innov.d[1][0] = vel_mps.y() - _v.y();
             innov.d[2][0] = vel_mps.z() - _v.z();
             kalmanUpdate(H, Rz, innov);
+        }
+
+        /**
+         * @brief 水平速度观测(光流 / GNSS 地速的水平分量), **带马氏门限与逐轴限幅**
+         *
+         * @return true = 观测被采纳; false = 被门限拒绝(调用方应上报 `CONTROL_VEL_REJECTED`)
+         *
+         * 为什么必须带门限 —— 这是本滤波器最危险的一个洞:
+         *   在此之前**水平速度/位置没有任何量测**(见文件头), 全靠惯性积分。于是
+         *   `P[δv]` 随时间线性增长、`P[δp]` 随时间三次方增长。没有门限时, 一次被污染的光流帧
+         *   (飞过纯色地面 / 镜面 / 强光)会拿到接近 1 的卡尔曼增益, 把速度状态**直接拽到错值**,
+         *   而且 P 同时被压缩 —— 之后所有观测都以这个错值为起点, 自己修正不回来。
+         *
+         * 为什么是马氏距离而不是"差值超过 X 就丢":
+         *   "多大算异常"取决于**当时的不确定度**, 而 S = H P Hᵀ + R 里就含着 P。
+         *   固定阈值等于假装 P 不变: 收敛后太松(放坏观测进来), 刚上电太紧(把好观测全挡掉)。
+         *
+         * 限幅和门限**不是二选一**, 而且**限幅才是第一道防线** —— 这一点单测实测出来了
+         * (test/ekf_check 第 2 节): 刚上电/长时间没有水平量测时 P[δv] 顶在夹子上限
+         * (σ_v = √25 = 5 m/s), 一个 10 m/s 的离群观测算出来 d² ≈ 100/(25+0.04) ≈ 4 < 3² = 9,
+         * **照样通过门限**。这不是 bug, 是数学事实: 滤波器确实不知道自己对不对, 马氏距离就没有
+         * 分辨力。所以次序是 —— 逐轴限幅保证"单次伤害有上界", 门限负责"收敛之后把坏观测丢掉"。
+         */
+        bool updateHorizontalVelocity(float vx_mps, float vy_mps)
+        {
+            MatF<2, FF_ERROR_COUNT> H;
+            H.d[0][FF_E_DV0] = 1.0f;
+            H.d[1][FF_E_DV1] = 1.0f;
+
+            // ---- 1) 逐轴限幅: 把量测夹到 "当前估计 ± limit" ----
+            const float lim = _params.flow_inno_limit_mps;
+            if (lim > 0.0f) {
+                vx_mps = constrain(vx_mps, _v.x() - lim, _v.x() + lim);
+                vy_mps = constrain(vy_mps, _v.y() - lim, _v.y() + lim);
+            }
+
+            MatF<2, 1> innov;
+            innov.d[0][0] = vx_mps - _v.x();
+            innov.d[1][0] = vy_mps - _v.y();
+
+            MatF<2, 2> Rz;
+            Rz.d[0][0] = _params.flow_vel_sigma_mps * _params.flow_vel_sigma_mps;
+            Rz.d[0][1] = Rz.d[1][0] = 0.0f; // 两轴独立: 光流的 x/y 噪声相关性可忽略
+            Rz.d[1][1] = Rz.d[0][0];
+
+            // ---- 2) 马氏门限: d² = innovᵀ S⁻¹ innov, 与 gate² 比 ----
+            if (_params.flow_gate_sigma > 0.0f) {
+                const MatF<2, 2> S    = matAdd(matMul(matMul(H, _P), matTranspose(H)), Rz);
+                const MatF<2, 2> Sinv = invSmall(S);
+                const MatF<2, 1> Si   = matMul(Sinv, innov);
+                const float d2 = innov.d[0][0] * Si.d[0][0] + innov.d[1][0] * Si.d[1][0];
+                const float g  = _params.flow_gate_sigma;
+                // 写成 !(d2 <= g*g) 而不是 (d2 > g*g): NaN 也要走"拒绝", 不能漏进去
+                if (!(d2 <= g * g)) {
+                    return false;
+                }
+            }
+
+            kalmanUpdate(H, Rz, innov);
+            return true;
+        }
+
+        /**
+         * @brief 把水平速度/位置的协方差夹到上限(发散的**最后一道**保险)
+         *
+         * 为什么需要: 水平方向长时间没有量测时 P 只增不减。夹住上限以后, 最坏情况退化成
+         * "那次观测被门限挡掉", 而不是"一次观测把速度状态打飞" —— 因为门限比较的是
+         * S = H P Hᵀ + R, P 有上限, 门限的实际尺度也就有上限。
+         *
+         * 为什么连非对角项一起夹: 只夹对角线会破坏块的正定性约束 |P_ij| ≤ √(P_ii·P_jj),
+         * 一个"对角线变小了、非对角还是老的"的协方差矩阵可能不再半正定, 下一次求逆就会出怪值。
+         * 这里直接把相关系数上界钉死, 是"近似"但**永远合法**的做法。
+         */
+        void clampHorizontalCovariance()
+        {
+            static const int idx[4] = {FF_E_DV0, FF_E_DV1, FF_E_DP0, FF_E_DP1};
+            const float cap[4] = {_params.vel_xy_var_max, _params.vel_xy_var_max,
+                                  _params.pos_xy_var_max, _params.pos_xy_var_max};
+            for (int a = 0; a < 4; ++a) {
+                if (!(cap[a] > 0.0f)) {
+                    continue; // <=0 = 不夹
+                }
+                if (_P.d[idx[a]][idx[a]] > cap[a]) {
+                    _P.d[idx[a]][idx[a]] = cap[a];
+                }
+            }
+            for (int a = 0; a < 4; ++a) {
+                if (!(cap[a] > 0.0f)) {
+                    continue;
+                }
+                for (int b = a + 1; b < 4; ++b) {
+                    if (!(cap[b] > 0.0f)) {
+                        continue;
+                    }
+                    const float bound = sqrtf(cap[a] * cap[b]);
+                    if (fabsf(_P.d[idx[a]][idx[b]]) > bound) {
+                        const float s = (_P.d[idx[a]][idx[b]] > 0.0f) ? bound : -bound;
+                        _P.d[idx[a]][idx[b]] = s;
+                        _P.d[idx[b]][idx[a]] = s;
+                    }
+                }
+            }
         }
 
         void updateGps(const GnssPosition &pos, const GnssVelocity &vel)
@@ -581,7 +704,8 @@ namespace dlx
 
     private:
         // 高度(世界系 z 位置)量测的公共实现
-        void applyHeightUpdate(float altitude_m, float sigma_m)
+        // gate_sigma > 0 时先做马氏门限(M=1 时 d² = innov²/S), 超限**不采纳**并返回 false。
+        bool applyHeightUpdate(float altitude_m, float sigma_m, float gate_sigma = 0.0f)
         {
             MatF<1, FF_ERROR_COUNT> H;
             H.d[0][FF_E_DP2] = 1.0f;
@@ -589,7 +713,17 @@ namespace dlx
             Rz.d[0][0] = sigma_m * sigma_m;
             MatF<1, 1> innov;
             innov.d[0][0] = altitude_m - _p.z();
+
+            if (gate_sigma > 0.0f) {
+                const MatF<1, 1> S    = matAdd(matMul(matMul(H, _P), matTranspose(H)), Rz);
+                const MatF<1, 1> Sinv = invSmall(S);
+                const float      d2   = innov.d[0][0] * Sinv.d[0][0] * innov.d[0][0];
+                if (!(d2 <= gate_sigma * gate_sigma)) {
+                    return false; // NaN 也走这里
+                }
+            }
             kalmanUpdate(H, Rz, innov);
+            return true;
         }
 
         static float sanitizeDt(float dt)
@@ -657,14 +791,14 @@ namespace dlx
             _ba = constrain(_ba, -_params.accel_bias_limit, _params.accel_bias_limit);
         }
 
-        // 小矩阵求逆: M=1 或 M=3
+        // 小矩阵求逆: M=1 / M=2 / M=3（超过 3 维的量测在这个滤波器里不存在, 需要时再加特化）
         template <size_t M>
         static MatF<M, M> invSmall(const MatF<M, M> &m)
         {
             return MatrixInvert<M>::apply(m);
         }
 
-        // 1x1 / 3x3 求逆的标签分发
+        // 1x1 / 2x2 / 3x3 求逆的标签分发
         template <size_t M>
         struct MatrixInvert;
 
@@ -696,6 +830,29 @@ namespace dlx
             MatF<1, 1> r;
             if (fabsf(m.d[0][0]) > 1e-12f) {
                 r.d[0][0] = 1.0f / m.d[0][0];
+            }
+            return r;
+        }
+    };
+
+    // 2x2 特化 —— 水平速度观测(光流/GNSS)的 S 就是 2x2，没有它编译期就过不去
+    //
+    // 为什么不复用 3x3: 给 2x2 补一个 0 行 0 列再求逆, 得到的是**同一个**结果但多算 3 倍,
+    // 而且 3x3 的伴随矩阵公式里有几项退化成的 0 相乘, 白算还容易掩盖"这一维其实不存在"。
+    // 2x2 的逆有闭式解: 1/det * [[d, -b], [-c, a]]。
+    template <>
+    struct FlightControlFilter::MatrixInvert<2>
+    {
+        static MatF<2, 2> apply(const MatF<2, 2> &m)
+        {
+            MatF<2, 2> r; // 全 0: 奇异时返回 0 矩阵 ⇒ 卡尔曼增益为 0 ⇒ 这次观测等于被丢掉
+            const float det = m.d[0][0] * m.d[1][1] - m.d[0][1] * m.d[1][0];
+            if (fabsf(det) > 1e-12f) {
+                const float inv = 1.0f / det;
+                r.d[0][0] =  m.d[1][1] * inv;
+                r.d[0][1] = -m.d[0][1] * inv;
+                r.d[1][0] = -m.d[1][0] * inv;
+                r.d[1][1] =  m.d[0][0] * inv;
             }
             return r;
         }

@@ -134,6 +134,15 @@ namespace dlx
             return reinterpret_cast<uint32_t>(&getUSART_TypeDef()->DR);
         }
 
+        /**
+         * @brief 底层外设指针
+         *
+         * 为什么要把这个私有成员暴露出来: 异常标志(IDLE/ORE/FE/NE)的清除必须"读 SR 再读 DR",
+         * 而这件事只有中断处理方知道该不该做。配套类(见 USARTDmaReceiver)需要拿到寄存器,
+         * 与其把整个外设操作复制一份, 不如开一个口子 —— 但**别拿它绕过本类去配串口**。
+         */
+        inline USART_TypeDef *peripheral() { return getUSART_TypeDef(); }
+
         // 本串口默认的 DMA 接收配置(数据流+通道), 供 setDMAReceive / 自行创建接收 DMA 使用
         inline DMAProfile getDefaultDMARxProfile()
         {
@@ -314,6 +323,18 @@ namespace dlx
             this->rxBuffer = nullptr;
             setITRequest(USARTITProfile::RXNE, DISABLE);
         }
+
+        /**
+         * @brief 只开/关 UART 的 DMA 接收请求位, 不创建 DMA 对象
+         *
+         * 与 setDMAReceive() 的分工: 那个函数会顺手建一个 **Normal 模式**的 DMA 对象;
+         * 而 IDLE 切帧要的是 **Circular** 模式(硬件自己绕回, 不需要每帧重启),
+         * 所以由调用方自己建 DMA, 这里只负责把请求位打开(见 USARTDmaReceiver)。
+         */
+        void setDmaRxRequest(bool on)
+        {
+            USART_DMACmd(getUSART_TypeDef(), USART_DMAReq_Rx, on ? ENABLE : DISABLE);
+        }
         /**
          * @brief 设置接收缓冲区
          * @see setSendBuffer()
@@ -443,6 +464,176 @@ namespace dlx
         ~USART(){
             DLX_IT_set_callback(static_cast<NVICITProfile>(getIRQn()),nullptr,nullptr);
         }
+    };
+
+    /**
+     * @brief USART + DMA 循环接收 + IDLE 切帧
+     *
+     * 要解决的问题
+     *   链路层要的是"一次突发"的边界, 而 RXNE 中断逐字节收只能给你字节流:
+     *     - 57600 下一帧 8 字节就是 8 次进中断, 每字节一次上下文切换;
+     *     - 更糟的是**边界信息丢了**, 上层只能靠"超时没过"猜一帧结束了没有 ——
+     *       这在 20ms 一个槽的 TDMA 里根本猜不准。
+     *   IDLE 是硬件给的边界: 总线上连续一个字符时间没有新数据, 它就置位。用它切帧,
+     *   拿到的天然是"这一段连续到达的字节"。
+     *
+     * 工作方式
+     *   - DMA **循环模式**连续把 DR 搬进 _buf, CPU 全程不参与;
+     *   - IDLE 中断里: 读 SR/DR 清标志 → `pos = 容量 - NDTR` → 把 [_lastPos, pos) 交给回调;
+     *   - 一次突发跨过缓冲末尾(DMA 绕回)时分两段交付, 上层拿到的仍是完整一段;
+     *   - DMA 的 TC 标志置位 = 至少在取走之前绕回过一次 = 有数据被覆盖, 记 overruns。
+     *
+     * 三条使用约束(不满足会静默丢数据)
+     *   1. **缓冲必须 ≥ 一帧长 + 余量**。突发比缓冲还长时, 覆盖发生在两次 IDLE 之间,
+     *      只能靠 TC 标志事后发现 —— 那时数据已经没了。
+     *   2. 回调在**中断上下文**里跑: 只许拷贝/置标志, 不许做 I/O、不许阻塞。
+     *   3. 与 RXNE 中断接收**互斥**(start() 里会关掉 RXNE)。
+     */
+    class USARTDmaReceiver
+    {
+    public:
+        /** 收到一段突发。data 只在回调期间有效(指向 DMA 缓冲), 需要留存请自己拷走。 */
+        typedef void (*BurstHandler)(const uint8_t *data, uint16_t len, void *ctx);
+
+        USARTDmaReceiver(USART &usart, uint8_t *buffer, uint16_t capacity)
+            : _usart(usart),
+              _buf(buffer),
+              _cap(capacity),
+              _view(buffer, capacity),
+              _dma(_view, usart.getDefaultDMARxProfile()),
+              _handler(nullptr),
+              _ctx(nullptr),
+              _lastPos(0),
+              _bursts(0),
+              _bytes(0),
+              _overruns(0)
+        {
+        }
+
+        /**
+         * @brief 启动接收
+         * @param prio USART 中断优先级 —— 这个中断每次突发只进一次(不是每字节),
+         *             所以给常规优先级即可, 不需要抢在控制环前面。
+         */
+        void start(USARTModeProfile mode, uint32_t baud, NVICPriorityProfile prio)
+        {
+            _usart.init(mode, baud);          // 外设本身(不动中断)
+            _usart.disableITReceive();        // 与 RXNE 逐字节接收互斥
+            _lastPos = 0;
+            _bursts = _bytes = _overruns = 0;
+
+            _dma.init(DMAModeProfile::P2M_PID_MIE_PByte_MByte_Cir_Med, _usart.getDR(), _cap,
+                      DMAFIFOProfile::Direct);
+            _dma.clearTransferCompleteFlag();
+            _usart.setDmaRxRequest(true);
+            _dma.start(); // 先让 DMA 跑起来再开 IDLE: 反过来的话第一段可能在中断里还没准备好缓冲
+
+            // ⚠ 顺序必须是"先装回调 → 清旧的 IDLE 挂起 → 再开 IDLE/NVIC"。
+            //   之前是"开 NVIC 再装回调", 上板表现为**卡死在启动**:
+            //   E220 的 AT 应答/上电期流量会把 USART3 的 IDLE 标志置起来; 一旦 NVIC 使能,
+            //   IDLE 中断立刻进, 但此时 DLX_IT 注册表里还没有 handler(注册要等下面一行),
+            //   分发器只能"什么都不做"就返回 —— 而 IDLE 标志只有"读 SR 再读 DR"才清得掉,
+            //   于是中断级别一直挂着、反复重进, CPU 永远回不到 start() 之后的代码。
+            //   现象就是"打印完启动 DMA+IDLE 接收后没有任何日志"(见 2026-10-18 上板复盘)。
+            _usart.setITCallback(&USARTDmaReceiver::trampoline, this);
+            // 清 IDLE 的标准序列: 先读 SR 再读 DR
+            (void)_usart.peripheral()->SR;
+            (void)_usart.peripheral()->DR;
+
+            _usart.setITRequest(USARTITProfile::IDLE, ENABLE);
+            _usart.initUSART_NVIC(prio);
+        }
+
+        void stop()
+        {
+            _usart.setITRequest(USARTITProfile::IDLE, DISABLE);
+            _usart.setDmaRxRequest(false);
+            _dma.stop();
+            _usart.setITCallback(nullptr, nullptr);
+        }
+
+        void setHandler(BurstHandler handler, void *ctx)
+        {
+            _handler = handler;
+            _ctx     = ctx;
+        }
+
+        uint32_t burstCount() const { return _bursts; }   ///< 收到多少段突发
+        uint32_t byteCount() const { return _bytes; }     ///< 累计字节
+        uint32_t overruns() const { return _overruns; }   ///< 被覆盖过几次(>0 就说明缓冲太小或上层太慢)
+
+        uint16_t capacity() const { return _cap; }
+        /** 当前已写位置(调试/排查用) */
+        uint16_t writePos() { return static_cast<uint16_t>(_cap - _dma.remaining()); }
+
+    private:
+        /** USART 中断入口: 只认 IDLE, 其余标志一概不管(ORE/NE 由上层按需处理) */
+        static void trampoline(USART *usart, void *ctx)
+        {
+            static_cast<USARTDmaReceiver *>(ctx)->onIdle(usart);
+        }
+
+        void onIdle(USART *usart)
+        {
+            if (USART_GetITStatus(usart->peripheral(), USART_IT_IDLE) == RESET) {
+                return;
+            }
+            // 清 IDLE 必须"先读 SR 再读 DR" —— GetITStatus 已经读了 SR, 这里补一次 DR。
+            // 少读 DR 的话标志永远清不掉, 中断会一直重进(而且是**看不到**的那种:
+            // 每进一次就交付一段 0 长度, 表现成 CPU 跑满但功能好像还正常)。
+            (void)USART_ReceiveData(usart->peripheral());
+
+            // 溢出判定必须在取 pos **之前**做: TC 置位表示指针已经绕过起点一次,
+            // 那意味着 [_lastPos, ...) 的前半段已经被新数据盖掉了。
+            if (_dma.transferCompleteFlag()) {
+                ++_overruns;
+                _dma.clearTransferCompleteFlag();
+                _lastPos = 0; // 只能从"当前能保证没被覆盖的"位置重新开始
+            }
+
+            const uint16_t pos = static_cast<uint16_t>(_cap - _dma.remaining());
+            deliver(pos);
+            _lastPos = pos;
+        }
+
+        /** 交付 [_lastPos, pos): 跨过缓冲末尾时分成两段 */
+        void deliver(uint16_t pos)
+        {
+            if (_handler == nullptr || pos == _lastPos) {
+                return; // 没有新数据(杂散 IDLE) —— 不要交付 0 长度, 上层会以为收到一个空帧
+            }
+            if (pos > _lastPos) {
+                const uint16_t len = static_cast<uint16_t>(pos - _lastPos);
+                ++_bursts;
+                _bytes += len;
+                _handler(_buf + _lastPos, len, _ctx);
+                return;
+            }
+            // 绕回了: 先交付尾段, 再交付头段
+            const uint16_t tail = static_cast<uint16_t>(_cap - _lastPos);
+            if (tail > 0) {
+                ++_bursts;
+                _bytes += tail;
+                _handler(_buf + _lastPos, tail, _ctx);
+            }
+            if (pos > 0) {
+                ++_bursts;
+                _bytes += pos;
+                _handler(_buf, pos, _ctx);
+            }
+        }
+
+        USART    &_usart;
+        uint8_t  *_buf;
+        uint16_t  _cap;
+        ByteBuffer _view; ///< 给 DMA 的内存视图(必须在 _dma 之前构造)
+        DMA        _dma;
+        BurstHandler _handler;
+        void        *_ctx;
+        uint16_t     _lastPos;
+        uint32_t     _bursts;
+        uint32_t     _bytes;
+        uint32_t     _overruns;
     };
 
 } // namespace dlx

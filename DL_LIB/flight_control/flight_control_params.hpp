@@ -2,6 +2,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+// 参数默认值来自项目配置树(cfg::control::*)，唯一真相是 kmpFly 的 Kotlin 声明
+// (shared/src/jvmMain/kotlin/kmpfly/settings/FlightConfig.kt → DL_LIB/generated/flight_config_gen.hpp)。
+// 本文件只负责"运行期可写的参数表 + 具名 ID"；数值不要在下面硬编码。
+#include "flight_config.hpp"
+
 //===================================================================================================
 // flight_control_params.hpp
 // FlightController 的全部参数集中定义于此:
@@ -121,60 +126,56 @@ namespace dlx
         COUNT,
     };
 
-    // 参数默认值表, 与 FlightParamId 顺序一一对应
+    // 参数默认值表, 与 FlightParamId 顺序一一对应。
+    // 数值来源: kmpFly 的 Kotlin 声明 cfg::control::*(导出成 DL_LIB/generated/flight_config_gen.hpp)
+    // (加参数时: 先在 Kotlin 声明里加一项 → `gradlew :shared:exportFlightConfig` 重新导出 →
+    //  再在这里和 FlightParamId 里各加一行, 顺序必须一致。)
     static constexpr float kFlightControlParamDefaults[static_cast<size_t>(FlightParamId::COUNT)] = {
-        0.125f, // ARM_LENGTH_M
-        1.566f, // MASS_KG: 电机600g + 机架250g + 电池716g
-        0.0234f, // INERTIA_XX: 4×150g 电机@长边半距 + 250g 机架细杆 + 716g 电池@z=5cm, 折算到重心
-        0.0124f, // INERTIA_YY
-        0.0338f, // INERTIA_ZZ
-        0.03f,  // YAW_TORQUE_ARM_M
-        /**
-         * HOVER_THROTTLE: 悬停油门(归一化)
-         *
-         * 首飞实测悬停大致落在 25% 杆量(原来按推力图估算的 30% 偏高), 2026-09-13 下调到 0.25。
-         * 注意它有两处用途, 改它等于同时改两件事:
-         *   1. 定高模式(updateAngleHeight)的**基准油门**: throttle = hover * (1 + acc_z/g);
-         *   2. 混控(混控器)把"期望力矩"换算成"油门差动"的比例 k = m*g/(4*hover) ——
-         *      hover 调小 ⇒ k 变大 ⇒ 同样力矩需要的差动变小, 姿态环的**等效增益按 1/hover 变化**。
-         *      0.30→0.25 相当于姿态环等效增益降到原来的 0.83 倍(会明显变"软"一档),
-         *      如果手感太肉, 把 RATE_ROLL/PITCH_P 从 8.0 提到 ~9.5 补回来即可。
-         */
-        0.25f,
-        0.05f,  // THROTTLE_MIN
-        1.0f,   // THROTTLE_MAX
-        0.35f,  // TILT_MAX_RAD (~20°, 首飞保守)
-        3.0f,   // ATT_ROLL_P (首飞保守)
-        3.0f,   // ATT_PITCH_P
-        3.0f,   // ATT_YAW_P
-        0.0f,   // ATT_YAW_WEIGHT
-        2.0f,   // RATE_ROLL_MAX (~114°/s)
-        2.0f,   // RATE_PITCH_MAX
-        1.0f,   // RATE_YAW_MAX (~57°/s)
-        9.0f,   // RATE_ROLL_P (首飞保守)
-        2.0f,   // RATE_ROLL_I
-        0.015f, // RATE_ROLL_D
-        9.0f,   // RATE_PITCH_P
-        2.0f,   // RATE_PITCH_I
-        0.015f, // RATE_PITCH_D
-        5.0f,   // RATE_YAW_P
-        1.0f,   // RATE_YAW_I
-        0.01f,  // RATE_YAW_D
-        0.0f,   // RATE_ROLL_FF
-        0.0f,   // RATE_PITCH_FF
-        0.0f,   // RATE_YAW_FF
-        40.0f,  // ANGACC_MAX (限角加速度, 防首飞过冲)
-        5.0f,   // RATE_INT_LIMIT
-        0.01f,  // RATE_D_TAU_S
-        2.0f,   // POS_Z_P
-        3.5f,   // VEL_Z_P
-        0.6f,   // VEL_Z_I
-        1.5f,   // VZ_MAX_UP
-        0.8f,   // VZ_MAX_DOWN
-        0.25f,  // VZ_EST_TAU_S
-        0.12933f, // ARM_FORWARD_M: 前向(短边)半距. 由对角轴距445mm 与 长:短=1.4:1 反推
-        0.18106f, // ARM_LATERAL_M: 横向(长边)半距. = 1.4 * ARM_FORWARD_M
+        cfg::control::kArmLengthM,           // ARM_LENGTH_M
+        cfg::control::kMassKg,               // MASS_KG
+        cfg::control::kInertiaXx,            // INERTIA_XX
+        cfg::control::kInertiaYy,            // INERTIA_YY
+        cfg::control::kInertiaZz,            // INERTIA_ZZ
+        cfg::control::kYawTorqueArmM,        // YAW_TORQUE_ARM_M
+        cfg::control::kHoverThrottle,        // HOVER_THROTTLE
+        cfg::control::kThrottleMin,          // THROTTLE_MIN
+        cfg::control::kThrottleMax,          // THROTTLE_MAX
+        cfg::control::kTiltMaxRad,           // TILT_MAX_RAD
+        cfg::control::kAttRollP,             // ATT_ROLL_P
+        cfg::control::kAttPitchP,            // ATT_PITCH_P
+        cfg::control::kAttYawP,              // ATT_YAW_P
+        cfg::control::kAttYawWeight,         // ATT_YAW_WEIGHT
+        cfg::control::kRateRollMax,          // RATE_ROLL_MAX
+        cfg::control::kRatePitchMax,         // RATE_PITCH_MAX
+        cfg::control::kRateYawMax,           // RATE_YAW_MAX
+        cfg::control::kRateRollP,            // RATE_ROLL_P
+        cfg::control::kRateRollI,            // RATE_ROLL_I
+        cfg::control::kRateRollD,            // RATE_ROLL_D
+        cfg::control::kRatePitchP,           // RATE_PITCH_P
+        cfg::control::kRatePitchI,           // RATE_PITCH_I
+        cfg::control::kRatePitchD,           // RATE_PITCH_D
+        cfg::control::kRateYawP,             // RATE_YAW_P
+        cfg::control::kRateYawI,             // RATE_YAW_I
+        cfg::control::kRateYawD,             // RATE_YAW_D
+        cfg::control::kRateRollFf,           // RATE_ROLL_FF
+        cfg::control::kRatePitchFf,          // RATE_PITCH_FF
+        cfg::control::kRateYawFf,            // RATE_YAW_FF
+        cfg::control::kAngAccMax,            // ANGACC_MAX
+        cfg::control::kRateIntLimit,         // RATE_INT_LIMIT
+        cfg::control::kRateDTauS,            // RATE_D_TAU_S
+        cfg::control::kPosZP,                // POS_Z_P
+        cfg::control::kVelZP,                // VEL_Z_P
+        cfg::control::kVelZI,                // VEL_Z_I
+        cfg::control::kVzMaxUp,              // VZ_MAX_UP
+        cfg::control::kVzMaxDown,            // VZ_MAX_DOWN
+        cfg::control::kVzEstTauS,            // VZ_EST_TAU_S
+        cfg::control::kArmForwardM,          // ARM_FORWARD_M
+        cfg::control::kArmLateralM,          // ARM_LATERAL_M
     };
+
+    static_assert(sizeof(kFlightControlParamDefaults) / sizeof(float) ==
+                      static_cast<size_t>(FlightParamId::COUNT),
+                  "默认值表项数与 FlightParamId::COUNT 不一致");
 
     //================================================================================================
     // 参数表

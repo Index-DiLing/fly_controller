@@ -95,5 +95,28 @@ namespace dlx
     constexpr uint32_t W25Q128_BLOCK64K_ERASE_TIMEOUT_MS = 2500u;  ///< tBE2 最大 2s
     constexpr uint32_t W25Q128_CHIP_ERASE_TIMEOUT_MS = 210000u;   ///< tCE 最大 200s
     constexpr uint32_t W25Q128_STATUS_WRITE_TIMEOUT_MS = 20u;    ///< tW 最大 15ms
-    constexpr uint32_t W25Q128_POWER_DOWN_RELEASE_US = 5u;       ///< tRES1 最大 3us
+    constexpr uint32_t W25Q128_POWER_DOWN_RELEASE_US = 20u;       ///< tRES1 最大 3us
+    constexpr uint32_t W25Q128_POWER_UP_MS = 10u;                 ///< tPUW 上电后到能收指令(最大 5ms)
+    constexpr uint32_t W25Q128_BUSY_WAIT_MS = 100u;              ///< 初始化时等 BUSY 清零的上限
+
+    // ==================================================================
+    // 识别重试(现场问题 2026-10-18: "flash 经常读不出 ID, 但并非总是")
+    //
+    // 现场表现: 上电/复位后偶发 JEDEC=0x171717, 同时 SR1=0x17 —— 这不是"另一个型号",
+    // 而是**芯片根本没在驱动 DO**(MISO 悬空, 5.25MHz 下采出来就是 0x17), 一秒后又恢复.
+    // 原因: 本板 W25Q128 的 /CS(PD1) **没有外部上拉**, MCU 复位期间该脚是浮空输入,
+    // 实测默认电平为**低** —— 芯片在"被选中"状态下经历上电/复位, 只要 SCK(PB10) 上有一点
+    // 噪声被当成时钟, 就可能被灌进半条/一整条杂散指令(写状态/擦除...), 于是接下来一段时间
+    // 只忙自己的事、不理 JEDEC. 这是硬件隐患(建议 /CS 加 10k 上拉).
+    //
+    // 固件侧的对策(不依赖改板): ① 识别失败按 66h/99h 软复位 + Release Power-Down 重试;
+    // ② 重试之间留出 tW/tPUW 量级的间隔, 让可能残留的擦写周期结束.
+    // ==================================================================
+    // 实测(2026-10-18 台架): 复位后芯片"不理人"的持续时间不是几十 ms 而是**约 0.1 ~ 1 s**
+    // (5 轮 × 8ms = 91ms 全部落空, 1 秒后的只读探测已能读到 0xEF4018). 这个量级和
+    // "杂散指令被当成扇区/块擦除" 吻合, 所以重试总预算按 ~1 秒给: 正常启动只花第一轮的
+    // 20ms(tPUW), 只有真的出错才会等到 1 秒; 等不到就按"flash 不可用"降级, 不假装没事.
+    constexpr uint8_t  W25Q128_ID_ATTEMPTS      = 9u;   ///< JEDEC 识别最多试几次(含首次)
+    constexpr uint32_t W25Q128_ID_RETRY_GAP_MS  = 100u; ///< 两次识别之间的间隔(等残留擦写结束)
+    constexpr uint32_t W25Q128_ID_RESET_GAP_US  = 50u;  ///< 66h/99h 软复位后的 tRST 等待(最大 30us)
 } // namespace dlx

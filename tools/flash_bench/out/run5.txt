@@ -1,0 +1,38 @@
+entry ram_main @ 0x2001C170, image 1212 bytes
+running...
+START version=3
+  RCC_CFGR = 0x000000
+  RCC_AHB1ENR = 0x10000E
+  SPI2_CR1 = 0x0354
+  read[15] JEDEC=0x004018 OK
+  read[1] JEDEC=0x000000 
+  read[2] JEDEC=0x000000 
+  read[3] JEDEC=0x000000 
+  read[4] JEDEC=0x000000 
+  read[5] JEDEC=0x000000 
+  read[6] JEDEC=0x000000 
+  read[7] JEDEC=0x000000 
+  read[0] JEDEC=0x000000 
+  read[1] JEDEC=0x000000 
+  read[2] JEDEC=0x000000 
+  read[3] JEDEC=0x000000 
+  read[0] JEDEC=0x000000 
+  read[1] JEDEC=0x000000 
+  read[2] JEDEC=0x000000 
+  read[3] JEDEC=0x000000 
+  read[0] JEDEC=0x000000 
+  read[1] JEDEC=0x000000 
+  read[2] JEDEC=0x000000 
+  read[3] JEDEC=0x000000 
+  SR1=0x00
+  SR1=0x00
+  SR1=0x00
+  SR1=0x00
+  -- WRSR race --
+  SR1=0x00
+  read[0] JEDEC=0x000000 
+  SR1=0x00
+  read[0] JEDEC=0x000000 
+  busy-poll iterations until idle = 0
+  read[0] JEDEC=0x000000 
+DONE

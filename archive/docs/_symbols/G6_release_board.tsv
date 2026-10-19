@@ -1,0 +1,143 @@
+release.cpp	include	(全部 include): stm32f4xx.h / dlx_gpio.hpp / dlx_usart.hpp / dlx_bytebuffer.hpp / dlx_spi.hpp / dlx_delay.hpp / rtthread.h / W25Q128/dlx_flash_manager.hpp / release_header.h / app_fault.hpp / app_boot_mode.hpp / app_exception_handler.h / app_flight_stack.hpp / release_log_manage.hpp	CMSIS 寄存器(TIM1/DWT)、GPIO、USART1 工厂+setDMASend、ByteBuffer/RingByteBuffer、SPI、delay_ms、rt_hw_exception_install、W25Q128+FlashManager、ReleaseContext/logLine、dlxExceptionHook、decideBootMode、ENABLE_EXCEPTION_TEXT、FlightStack、runLogManage	-	本文件是"组合根": 只做上电编排 + 分发
+release.cpp	namespace	dlx (using namespace)	把 dlx 的类型名引入本 TU	-	不是新命名空间, 是 using 声明
+release.cpp	struct	FlashBringUp	flash 上电结果: 芯片认出来没有 / 文件系统起没起来	栈上实例 :160, 传引用 :161	定义 :67
+release.cpp	member	FlashBringUp::chipOk	W25Q128 JEDEC 校验通过; 不通过时管理模式停止闪灯	写 :230 -> 读 :165	默认 false
+release.cpp	member	FlashBringUp::ready	FlashManager::init 成功(能读写日志); 布局不符/自动格式化会改写	写 :237,258,263 -> 读 :174,268	默认 false
+release.cpp	static-func	bringUpFlash()	挂载 flash: SPI init -> JEDEC -> setSessionSlotLimit/setFullPolicy -> fs.init(带 onFlashBusy); 失败发异常码	release.cpp:161	★SerialDebug 模式直接 return(不碰 flash, 免得擦写影响台架试验)
+release.cpp	static-func	runFlightStack()	先 logDshotTiming() 打时基预算, 再构造 FlightStack 并 run(); 内部不返回	release.cpp:204,211	★logDshotTiming 必须在 FlightStack 构造之前(dshot 成员构造会配 TIM1 时基, 算不出预分频会 while(1))
+release.cpp	function	main()	上电编排: NVIC+异常钩子 -> DWT -> 栈水位 -> LED/调试串口(DMA+协议) -> 信箱接线 -> 模式判定 -> flash -> 分发	无调用方(启动文件 Reset_Handler 经 __main 调用)	飞行模式唯一一次串口输出是版本行; 之后完全静音
+release_header.h	include	(全部 include): stdint.h / stddef.h / stdarg.h / stdio.h / string.h / dlx_bytebuffer.hpp / dlx_gpio.hpp / dlx_usart.hpp / dlx_dma.hpp / dlx.hpp / flight_config.hpp / hardware_claims.hpp / app_log_channel.hpp / app_state.h / W25Q128/dlx_flash_manager_config.h / dlx_sensor_data.hpp / dlx_gpio_profile.h / dlx_spi_profile.hpp / dlx_timer_profile.hpp / dlx_dshot_profile.hpp / flight_control/flight_controller.hpp / flight_control/flight_control_fliter.hpp	公共头: 全工程唯一的跨模块类型与工具集合	-	注意它反向包含 app_log_channel.hpp, 与 app_flight_shared.hpp 构成循环, 由 #pragma once 阻断
+release_header.h	namespace	dlx	本头全部声明都在 dlx 命名空间	-	-
+release_header.h	struct	FlashManager	前置声明: 这里只用指针(避免头文件拖进整个文件系统)	release_header.h:365 成员 / release.cpp:159	定义在 W25Q128/dlx_flash_manager.hpp
+release_header.h	enum	BootMode	上电模式三选一(Flight/SerialDebug/LogManage)	release.cpp:138,144,150,164,181,185,190,221,231 / app_boot_mode.hpp:98-102,120,182 / app_flight_stack.hpp:385	enum class : uint8_t
+release_header.h	enumerator	BootMode::Flight	正常飞行: 日志写 flash, 串口完全静音	release.cpp:138(默认值),150,190,221,231 / app_boot_mode.hpp:98,120	值 0
+release_header.h	enumerator	BootMode::SerialDebug	串口直连调试: 日志走串口, 可台架解锁试车	release.cpp:185,186,221 / app_boot_mode.hpp:100	值 1
+release_header.h	enumerator	BootMode::LogManage	日志管理: 不建线程、不动电机	release.cpp:164,181 / app_boot_mode.hpp:102,182	值 2
+release_header.h	struct	BootDecision	上电模式判定的结论(v2.1 只剩 mode 一个字段)	release.cpp:144 / app_boot_mode.hpp:118,120	原 groundMode/byCommand/rawParam 三个只写不读的字段已删
+release_header.h	member	BootDecision::mode	最终进入的模式; 由 decideBootMode 唯一写入	写 app_boot_mode.hpp:120,162,182 -> 读 release.cpp:145	-
+release_header.h	enum	GroundOp	地面命令 op 表(与 Kotlin 侧 GroundOp 一一对应, 两边同时改)	release_log_manage.hpp:73,173,199,203 / app_boot_mode.hpp:71,81,170 / app_flight_stack.hpp:2053	enum class : uint16_t
+release_header.h	enumerator	GroundOp::Unlock	解锁并切到 mode 指定模式(0 飞行/1 调试/2 管理)	release_log_manage.hpp:73,173,199,204 / app_boot_mode.hpp:71,81,170 / app_flight_stack.hpp:2053	值 1
+release_header.h	enumerator	GroundOp::ListSessions	列出全部会话: 逐条 SessionInfoW + 一条汇总应答	release_log_manage.hpp:219	值 2
+release_header.h	enumerator	GroundOp::DeleteOldest	丢最老的 count 个会话(环形语义, 槽并入当前会话)	release_log_manage.hpp:232	值 3; 内部 dropSessions 带擦除进度回调
+release_header.h	enumerator	GroundOp::DumpSession	把整个会话按原始 FlightLog 帧流回传	release_log_manage.hpp:255	值 4
+release_header.h	enumerator	GroundOp::FormatFlash	整片擦除重建(几十秒, 丢日志+参数)	release_log_manage.hpp:277	值 5; ★唯一恢复布局不符的路
+release_header.h	enumerator	GroundOp::Ping	空指令, 回一条应答探链路	release_log_manage.hpp:214	值 6
+release_header.h	enumerator	kLogFlag* 13 位(flags, 电平型: 当时处于什么状态): LinkOk 0x0001 / ImuOk 0x0002 / BaroOk 0x0004 / AngleLoop 0x0008 / MotorEnabled 0x0010 / MotorStarting 0x0020 / HardStop 0x0040 / FlashOk 0x0080 / LogFull 0x0100 / LogError 0x0200 / MotorSat 0x0400 / Failsafe 0x0800 / GroundMode 0x1000	LogEntry::flags 的 13 个状态位	app_flight_stack.hpp:1873-1885(唯一写入点, 每圈按 gatherFacts 重算)	LogFull/LogError 的源 sh.rt.logFull/logError 全仓无写者 => 这两位置不上
+release_header.h	enumerator	kLogEvent* 9 位(events, 边沿型: 期间发生了什么): CommandChanged 0x0001 / Arm 0x0002 / Disarm 0x0004 / Failsafe 0x0008 / MotorSat 0x0010 / LogFault 0x0020 / BaroUpdate 0x0040 / EkfRezero 0x0080 / ArmRejected 0x0100	LogEntry::events 的 9 个边沿位, 随日志归档后清零	app_flight_stack.hpp:309,331,338,1353,1362,1403,1444,1743,1845,1849,1852(置位) -> stepLog():1869 读 :1936 清	模式切换复用 CommandChanged 位(新加日志位要动布局版本)
+release_header.h	enumerator	kFlowFlag* 4 位: FlowValid 0x01 / RangeOk 0x02 / GnssVel 0x04 / VelHold 0x08	LogEntry::flowFlags: 这一条日志的水平观测当时是否有效	RangeOk app_flight_stack.hpp:1252 / GnssVel :1312 / VelHold :1283	★FlowValid 无调用方(死位): 事后要分清"没数据/有数据被门限拒/进了 EKF 但尺度错"
+release_header.h	enumerator	kTelStatus* 8 位(status, 每次回传按当前状态重算不是锁存): MotorEnabled 0x01 / MotorStarting 0x02 / AngleLoop 0x04 / LinkOk 0x08 / HardStop 0x10 / Failsafe 0x20 / LogFull 0x40 / BaroOk 0x80	FlightCoreStatus::status 的 8 个实时状态位	app_flight_stack.hpp:1784-1792 -> 遥测/日志状态行	★高度字段装的是垂速还是高度, 看 kTelStatusBaroOk(0x80)
+release_header.h	enumerator	kTelErr* 3 位: LogWrite 0x01 / Imu 0x02 / Baro 0x04	FlightCoreStatus::error 的 3 个真故障位(只报这一时刻, 问题解决就回 0)	app_flight_stack.hpp:1794-1796	"错误一闪而过不要漏看"是显示端的事(自己按位或锁存)
+release_header.h	struct	FlightTelemetry	控制线程 -> 链路线程的遥测快照(整体拷贝取一致)	release_header.h:282 成员 / app_link_thread.hpp:167 局部拷贝	定义 :159
+release_header.h	member	FlightTelemetry::quat / motor[4]	EKF 姿态(机体到世界) / 四路电机输出(DShot 计数)	写 app_flight_stack.hpp:1800,1802 -> 读 app_link_thread.hpp:176,186	InterruptLock 整份拷贝(app_link_thread.hpp:170)
+release_header.h	member	FlightTelemetry::height_m	EKF 高度[m]	写 app_flight_stack.hpp:1803 -> 读 app_link_thread.hpp:69(linkGuards)	读侧无锁(单字读)
+release_header.h	member	FlightTelemetry::vertical_vel_mps	EKF 垂向速度[m/s]	写 app_flight_stack.hpp:1804 -> 无直接读者(只作 velWorldMps 的 z 源 :1814)	-
+release_header.h	member	FlightTelemetry::velWorldMps	世界系速度[m/s](水平来自 EKF, z 同垂速)	写 app_flight_stack.hpp:1814 -> 读 app_link_thread.hpp:177	★必须与姿态同一时刻取齐, 否则 DL_ATT 机体速度会抖
+release_header.h	member	FlightTelemetry::posWorldM	世界系位置[m]; 只有 z(高度)有效, x/y 恒 0	写 app_flight_stack.hpp:1816 -> 读 app_link_thread.hpp:182	不编假数据
+release_header.h	member	FlightTelemetry::batteryV / batteryA	电池组电压[V](来自 PowerSample, 没采到=0) / 电流[A]	写 app_flight_stack.hpp:1823,1824 -> 读 app_link_thread.hpp:183,184	此前 PowerSample 采了却没有任何地方读它
+release_header.h	member	FlightTelemetry::status / error / enabled	回传状态位(实时) / 错误位(实现是实时, 注释写粘滞) / 电机是否已使能	写 app_flight_stack.hpp:1805,1806,1807 -> 读 app_link_thread.hpp:178,179 / app_log_thread.hpp:310,311	enabled 派生自 app::isTakeover(state)
+release_header.h	struct	PerfStats	计算负载统计(控制线程填, 日志线程发)	release_header.h:285 成员 / app_log_thread.hpp:272,289	定义 :187
+release_header.h	member	PerfStats::loopAvgCycle / loopMaxCycle / ekfCycle / ctrlCycle / logCycle / ioCycle / samples / drops	主循环平均与最大耗时 / EKF 慢路径 / 控制器+混控 / 日志打包落盘 / IMU+气压计读取 / 本窗口圈数 / 本窗口队列丢弃条数	写 app_flight_stack.hpp:1967-1974(临界区 1966) -> 读 app_log_thread.hpp:277,278,371-377	PerfWarnUs=800 是告警线
+release_header.h	struct	FlightRuntimeState	跨线程共享飞行状态(取代 IntegratedFlightState)	release_header.h:282 / app_flight_shared.hpp:128	定义 :207; 线程约定见文件头
+release_header.h	member	FlightRuntimeState::command	遥控指令字(默认 9=无指令/待机)	写 app_link_thread.hpp:326(临界区 320) -> 读 app_flight_stack.hpp:1065(临界区 1064) / app_log_thread.hpp:309(临界区 293)	单写者=链路线程
+release_header.h	member	FlightRuntimeState::manualThrottle / setpoint	手动油门 0~1 / 期望姿态与期望高度	写 app_link_thread.hpp:327,328-330(临界区) -> 读 app_flight_stack.hpp:1066,1067(临界区)	整结构在临界区里拷贝
+release_header.h	member	FlightRuntimeState::motorValue[4]	直接电调测试用四路输出(默认 50)	写 app_flight_stack.hpp:1799(控制环, 无锁) -> 读 app_flight_stack.hpp:1070(临界区)	只由控制线程写
+release_header.h	member	FlightRuntimeState::lastValidCtrl	最近一次有效遥控指令时间戳[ms]	写 app_link_thread.hpp:331,374,379,404,415,428 -> 读 app_flight_stack.hpp:1068 / app_log_thread.hpp:308	链路超时判据的源头
+release_header.h	member	FlightRuntimeState::lastArmStatus	最近一次解锁判定结果(app::GroundStatus)	写 app_flight_stack.hpp:1440 -> 无读者	★只写不读(诊断用)
+release_header.h	member	FlightRuntimeState::altTargetM	UP_SETPOINT 的绝对期望高度[m](仅 ALT_VALID 时更新)	写 app_link_thread.hpp:402(临界区 400) -> 读 app_flight_stack.hpp:1508	链路只写/控制环只读
+release_header.h	member	FlightRuntimeState::velTargetMps / velTargetValid	UP_VEL 三轴世界系速度 / 是否有效	写 app_link_thread.hpp:411-414(临界区 410) -> 读 app_flight_stack.hpp:1686,1687,1701	三轴一起写一起置位, 分开写会拼出新旧混合
+release_header.h	member	FlightRuntimeState::motorCmdValue[4]	测试模式直控四路 DShot 计数(仅 Manual+Armed 生效)	写 app_link_thread.hpp:426(临界区 424) / 清 app_flight_stack.hpp:351(临界区 349) -> 读 app_flight_stack.hpp:1651(临界区 1649)	链路整份覆盖
+release_header.h	member	FlightRuntimeState::lastRollN / lastPitchN / lastThrN / lastStickValid	最近一帧 UP_CTRL 的 roll/pitch counts 与油门 0..2047 / 杆量是否有效	写 app_link_thread.hpp:334-337(临界区) -> 读 app_flight_stack.hpp:297(makeGuards 经 applyStickFacts) / app_link_thread.hpp:70	解锁门槛"油门低位 + 杆量中位"的判据
+release_header.h	member	FlightRuntimeState::uplinkStreak	连续采信的上行帧数(解锁门槛判据)	写 app_link_thread.hpp:311(临界区 307) / 清 509(临界区 508) -> 读 app_flight_stack.hpp:296 / app_link_thread.hpp:68	volatile
+release_header.h	member	FlightRuntimeState::bootReady	上电期门槛是否通过(线程起来/电源能采样)	写 app_flight_stack.hpp:1840(控制环每圈) -> 读 app_link_thread.hpp:66 / app_state.cpp:333(经 guards)	volatile; 给解锁回准确理由
+release_header.h	member	FlightRuntimeState::telem	控制线程 -> 遥测线程的 FlightTelemetry	写 app_flight_stack.hpp:1800-1824 -> 读 app_link_thread.hpp:171(InterruptLock 整份) / app_log_thread.hpp:310,311	跨结构一致性靠调用方临界区
+release_header.h	member	FlightRuntimeState::perf	最近一个窗口的负载(每 perfReportMs 更新)	写 app_flight_stack.hpp:1975(临界区 1966-1988) -> 读 app_log_thread.hpp:274(临界区 273),312	取齐用 rt_enter_critical
+release_header.h	member	FlightRuntimeState::linkBytesIn / linkRxFrames / linkRxRejects / linkAdmitRejects / linkCmdsApplied / linkTxFrames / linkTxFail / linkTxSkipGps	链路 8 个诊断计数(搬入字节/合法帧/坏字节/采信拒/采纳/发帧/发失败/跳过 GPS)	写 app_link_thread.hpp:257,274,300,339,390,406,417,430,463,476,479 -> 读 app_log_thread.hpp:296-303(临界区 293)	★linkTxFail 全仓无写者(恒 0); 32 位对齐字访问不撕裂所以写入侧不进临界区
+release_header.h	member	FlightRuntimeState::linkMuted / linkGoodStreak / linkWindowArmed / linkUlLossPct	时分从端的相位与静默状态(静默/连续好帧/窗口已开/上行丢包%)	写 app_link_thread.hpp:524-527(临界区 523) -> 读 app_log_thread.hpp:304-307	发帧偏少时光看计数分不出"没轮到/被静默/发了没到", 这四个数把它分开
+release_header.h	member	FlightRuntimeState::logError	日志写入出错	写 app_flight_stack.hpp:390(仅 FlightStack 构造无 fs 时) -> 读 app_flight_stack.hpp:1770	volatile; ★appendLog 的返回值在日志线程被 (void) 掉, 所以飞行中写错不会置位
+release_header.h	member	FlightRuntimeState::logFull	日志写满	无写者 -> 读 app_flight_stack.hpp:1769	★恒 false => kTelStatusLogFull/kLogFlagLogFull 永远不置位
+release_header.h	constexpr	kFlightLogPayloadBytes / kFlightLogFrameBytes	一条日志 DLX 打包后的负载字节数 140 / 帧总字节数 142(140+2)	release_header.h:332 / app_log_thread.hpp:49(注释) / release_log_manage.hpp:128	回传前要保证 remaining() 够
+release_header.h	function	formatPin(GPIOProfile, char*, size_t)	把 GPIOProfile 格式化成 "PB12"(port=高 4 位, pin=低 4 位)	app_bringup.hpp:118,119	★引脚是算出来的, 永远不可能和配置对不上(曾因硬编码字符串骗过一次人)
+release_header.h	struct	ReleaseContext	release.cpp 与日志管理模式共用的上下文(硬件句柄 + 模式)	release.cpp:137 聚合初始化,71,218,276 / release_log_manage.hpp:158 / app_boot_mode.hpp:118	定义 :358; ★channel 必须在成员列表末尾(老式聚合初始化靠它零初始化)
+release_header.h	member	ReleaseContext::usart	调试串口 USART1(2Mbaud)	写 release.cpp:137	-
+release_header.h	member	ReleaseContext::serialDma	串口 DMA 发送对象(与 txBuf 绑定)	写 release.cpp:137 -> 读 release_header.h:400,404,405,412	只有 main/日志线程用
+release_header.h	member	ReleaseContext::txBuf	发送缓冲(DMA 源)	写 release.cpp:137 -> 读 release_header.h:401,413 / release_log_manage.hpp:108,128,222,262	★单写者前提: 上电期与 logger 未启动窗口内 main 独占, 之后交给日志线程
+release_header.h	member	ReleaseContext::uartRx	串口接收环形缓冲(RXNE 中断写入)	写 release.cpp:137 -> 读 release_log_manage.hpp:165,185 / app_boot_mode.hpp:144,158	上电期/管理模式是唯一消费者; ★进 FlightStack 后无人排空
+release_header.h	member	ReleaseContext::protocol	DLX 协议对象(收发地面报文与日志帧)	写 release.cpp:137 -> 读 release_log_manage.hpp:163,164,185 / app_flight_stack.hpp:2053	-
+release_header.h	member	ReleaseContext::fs	文件系统(串口调试模式 = nullptr)	写 release.cpp:137(nullptr),176,202,269 -> 读 release.cpp:191,198	nullptr 表示不碰 flash
+release_header.h	member	ReleaseContext::ledRun / mode	运行指示灯(心跳/慢闪/等待) / 当前模式	写 release.cpp:137 / :145,186,190 -> 读 release.cpp:171 / :164,221,231 / release_log_manage.hpp:143	-
+release_header.h	member	ReleaseContext::channel	日志渠道(文本与异常两条信箱的指针)	写 release.cpp:138 -> 读 release_header.h:436-456 / app_log_thread.hpp:172 / app_exception_handler.cpp:51	两条路互不转换
+release_header.h	global	debugPort	文本日志出口(注释说飞行模式置 nullptr = 静音)	无调用方(全仓仅注释引用)	★extern 声明在 release_header.h:384, 但定义已被注释掉(release_header.cpp:21); 因全仓无 odr-use 才能链接通过
+release_header.h	global	logContext	文本日志要用的上下文(main 绑定一次)	写 release.cpp:139 -> 读 release_header.h:436,437,456 / app_log_thread.hpp:171 / app_exception_handler.cpp:50	extern; 定义在 release_header.cpp:26; 裸全局无锁, 启动期写一次后只读
+release_header.h	global	flashLedPhase	擦除进度灯当前相位(低电平点亮)	写 release_header.h:501(onFlashBusy 翻转),519(onFlashIdle 清零) -> 读 release_header.h:502	extern; 定义在 release_header.cpp:29; 裸全局无锁, 只被这两个回调读回
+release_header.h	function	dmaSendStart(ReleaseContext&)	启动一次 DMA 发送: 先 wait() 回收上次, txBuf 空则返回, 否则 reset+start	release_header.h:411(flushSerial 内)	★顺序不可换(reset 清 TC 必须紧跟 start)
+release_header.h	function	flushSerial(ReleaseContext&)	把 txBuf 内容阻塞发完(DMA wait 后 reset)	release_log_manage.hpp:109,224,264 / release_header.h:488(replyGround 内)	仅地面/管理期由 main 调用; 日志线程走自己的批次
+release_header.h	function	logLine(fmt,...)	格式化到调用方栈缓冲后投递 textMailbox; 从不自己发送	release.cpp:141,166,177,184,192,199,226,239,246,257,260 / release_log_manage.hpp:167,172,210,220,228,242,245,260,272,278,287,289,298 / app_flight_stack.hpp:403-2102 / app_sensors.hpp:248-850 / app_boot_report.hpp:73-241 / app_bringup.hpp:117,120 / app_boot_mode.hpp:133-180 / app_exception_handler.cpp:30	第一道闸 cfg::feature::kVerboseBootLog; 第二道 logContext/channel/textMailbox 非空; ★投递而非就地发送是为了不踩日志线程正在用的 txBuf
+release_header.h	macro	THROWS_R(reason) / THROWS	带原因串 / 不带原因串的追踪宏: 打 "[Thrl] ... @文件@函数@行"	无调用方	★全仓无使用者
+release_header.h	function	drainDlx(DLX_ProtocolBuffer&, RingByteBuffer&)	把接收环里能解析的帧全部解析掉, 退出条件是 FAILED_INSUFFICIENT	app_boot_mode.hpp:158 / release_log_manage.hpp:185	每轮至少前进 1 字节, 半帧留给下次
+release_header.h	function	replyGround(ReleaseContext&, op, status, sessionId, value)	先 reset txBuf, 用 GroundReplyW 组帧, 再阻塞 flushSerial	app_boot_mode.hpp:175 / release_log_manage.hpp:173,199,206,209,215,225,234,248,257,271,291,299 / app_flight_stack.hpp:2053	★调用者必须独占 txBuf(上电期/管理模式/logger 未启动窗口)
+release_header.h	function	onFlashBusy()	擦除/格式化进度回调: 每擦完 64KB 块翻转一次擦除灯	release.cpp:198,235,262,263 / release_log_manage.hpp:238,279,283(作函数指针传给 fs)	内部 static GPIO/static inited, 首次调用才 init; 写 flashLedPhase
+release_header.h	function	onFlashIdle()	擦除/格式化结束熄灭进度灯(相位清零)	release.cpp:236,265 / release_log_manage.hpp:240,285	避免灯恰好停在常亮被误判为故障
+release_header.h	function	writeLogEntry(DLX_ProtocolBuffer&, const LogEntry&)	把 flash 里的 LogEntry 打包成 DLX FlightLog 帧追加到协议缓冲	release_log_manage.hpp:131 / app_log_thread.hpp:212	不 reset; 调用前 remaining() 必须 >= kFlightLogFrameBytes
+release_header.h	function	remapSensorFrame(yawDeg, x, y, z)	传感器轴重映射: 绕 z 偏转 0/90/180/270 度	app_flight_stack.hpp:1096,1107,1113,1133	用手动抬机头/左右滚来判定哪一档对
+release_header.cpp	include	release_header.h	唯一 include, 提供 extern 声明与 dlx 命名空间	-	本文件专门用来放头文件里那几个 extern 的唯一定义
+release_header.cpp	namespace	dlx	全局句柄定义所在命名空间	-	-
+release_header.cpp	global	logContext	ReleaseContext* 定义, 初值 nullptr(没绑定就丢弃日志)	写 release.cpp:139 -> 读 release_header.h:436,437,456 / app_log_thread.hpp:171 / app_exception_handler.cpp:50	启动期单次写, 之后只读
+release_header.cpp	global	flashLedPhase	bool 定义, 初值 false	写 release_header.h:501,519 -> 读 release_header.h:502	裸全局无锁
+release_header.cpp	global	debugPort	定义已被注释掉("removed at 2026/10/2")	无调用方	★头文件仍 extern 声明但无定义; 因全仓无 odr-use 才能链接通过
+release_log_manage.hpp	include	(全部 include): release_header.h / W25Q128/dlx_flash_manager.hpp / rtthread.h	ReleaseContext/logLine/replyGround/GroundOp、FlashManager 完整定义、rt_tick_get_millisecond	-	做成头文件实现是为了避免 EIDE 漏加 .cpp 导致链接期未定义符号
+release_log_manage.hpp	namespace	dlx / log_manage_detail	外层层级与内部实现细节(命令暂存/上下文/解析回调)	release_log_manage.hpp:160(using)	后者不是公共接口
+release_log_manage.hpp	struct	ManageCommand	上位机命令暂存(解析回调填, 主循环消费)	cmd() 内静态 :48 / :61,72,186	定义 :36; 单线程所以无需临界区
+release_log_manage.hpp	member	ManageCommand::got	有一条待处理命令; 取走后由主循环清 false	写 :67,78,196 -> 读 :187	volatile bool
+release_log_manage.hpp	member	ManageCommand::op / mode / sessionId / count	GroundOp 原始码 / Unlock 目标模式 / DumpSession 会话号 / DeleteOldest 条数	写 :62-65,73-77 -> 读 :191-194,203,205,209,211,233,256	-
+release_log_manage.hpp	member	ManageCommand::legacy	true = 来自旧版 UnBlock(param) 报文	写 :66,77 -> 读 :195,198	兼容首飞版操作习惯
+release_log_manage.hpp	function	cmd()	函数内 static ManageCommand 的单例访问器	:61,72,186	单线程管理模式, 无并发
+release_log_manage.hpp	function	ctxRef()	函数内 static ReleaseContext* 访问器(回调拿上下文)	:90,126,162	进入 runLogManage 时绑定
+release_log_manage.hpp	function	onGroundCmd(GroundCmd*,void*)	GroundCmd 解析回调: 只记字段+置 got, 不做重活	注册 :163	★在 protocol.check() 内被调, 禁止在这里发送(那一刻报文对象还指着解帧缓冲)
+release_log_manage.hpp	function	onUnBlock(UnBlock*,void*)	旧版 UnBlock(param) 回调: 转成 GroundOp::Unlock + legacy=true	注册 :164	param 越界由主循环回 BadArgument
+release_log_manage.hpp	struct	ListCtx	列会话的累加上下文(回调入参)	栈上 :221, 传参 :223	定义 :82
+release_log_manage.hpp	member	ListCtx::count / lastId	已列出几个会话(应答里的 value) / 最后一个会话号	写 :113,114 -> 读 :227,228	-
+release_log_manage.hpp	function	listSessionCb(const FlashLogSessionInfo&,void*)	遍历会话回调: 逐会话 countEntries 全扫 -> 必要时 flushSerial -> 发 SessionInfoW	:223(forEachSession)	★一个会话 0.2~7s(条目数没存在槽头里, 只能扫一遍); remaining<20B 就 flush
+release_log_manage.hpp	struct	DumpCtx	回传会话的累加上下文	栈上 :261, 传参 :263	定义 :119
+release_log_manage.hpp	member	DumpCtx::sent	已回传条数(应答的 value)	写 :132 -> 读 :271,273	-
+release_log_manage.hpp	function	dumpEntryCb(const LogEntry&,void*)	遍历条目回调: remaining<142B 就 flush, 再把 LogEntry 转成 FlightLog 帧	:263(forEachEntry)	单批约 13 条
+release_log_manage.hpp	function	tickLed(ReleaseContext&, uint32_t&, bool&)	管理模式慢闪(每 kManageBlinkMs=500ms 翻转 ledRun)	:182(主循环每轮)	状态灯"我在跑"
+release_log_manage.hpp	function	runLogManage(ReleaseContext&)	管理模式死循环: 注册回调 -> drainDlx -> 按 cmd 分发(查/删/回传/格式化/Ping/解锁)	release.cpp:180	★只有收到 Unlock 才返回目标模式; 不建线程、不碰电机、不做临界区
+app_stack.hpp	include	rtthread.h / stdint.h	rt_thread_self / rt_thread_t / stack_addr 与定长类型	-	只依赖 rtthread, 不依赖任何 cfg/外设 => 可在任何线程里用
+app_stack.hpp	namespace	dlx	三个 inline 函数的命名空间	-	-
+app_stack.hpp	function	readStackPointer()	内联汇编读当前 SP(mov %0, sp)	paintStackWatermark 内 :42	用 SP 以下 64B 作安全边界
+app_stack.hpp	function	paintStackWatermark()	把当前线程未使用的栈区填 0xA5(只填 SP-64 以下)	release.cpp:93 / app_log_thread.hpp:161 / app_link_thread.hpp:449 / app_sensors.hpp:660,702,758,875(经 paintThreadWatermark)	线程刚启动时调一次; 不碰活动栈帧
+app_stack.hpp	function	stackUsedBytes(rt_thread_t)	扫描 0xA5 层估算某线程用掉多少栈; 没打过或超界返回 0	app_log_thread.hpp:384,386,388	需先 paintStackWatermark
+app_fault.hpp	include	rt-thread/include/rtthread.h 与 rthw.h	rt_err_t / RT_ERROR 与 rt_hw_exception_install 声明	-	rthw.h 才是 rt_hw_exception_install 的声明处
+app_fault.hpp	function	dlxExceptionHook(void*)	extern "C" 声明: RT-Thread 硬件异常的统一出口	release.cpp:82(rt_hw_exception_install(dlxExceptionHook))	定义在 stm32f4xx_it.cpp:144
+hardware_claims.hpp	include	flight_config.hpp / dlx_gpio_profile.h	cfg::hw::* / cfg::power::* / cfg::sensor::gnss::* 取值与 GPIOProfile	-	★本文件是全工程唯一允许把 cfg 引脚/通道与具体外设绑在一起的地方
+hardware_claims.hpp	namespace	dlx / claims	外层层级与接线事实断言命名空间	app_sensors.hpp:540(claims::kAdcVoltagePin/kAdcCurrentPin)	DL_LIB 不认识 cfg, 分工见文件头
+hardware_claims.hpp	function	pinNo(GPIOProfile)	constexpr: 取 GPIOProfile 低 4 位 = 引脚号	hardware_claims.hpp:56,58,80,83,106,110,129,132,141	仅本文件使用
+hardware_claims.hpp	function	portNo(GPIOProfile)	constexpr: 取 GPIOProfile 高 4 位 = 端口(A=0)	hardware_claims.hpp:56,58,83,108,112,129,132,141	仅本文件使用
+hardware_claims.hpp	function	adcPinOfChannel(uint8_t)	constexpr: 通道号 -> 引脚(F4 的 ADC1_INx 就是 PAx, 一次纯计算)	hardware_claims.hpp:54,55	写错一次的症状是"电压表读的是电流"
+hardware_claims.hpp	constexpr	kAdcVoltagePin / kAdcCurrentPin	电压采样引脚(应为 PA0) / 电流采样引脚(应为 PA1)	app_sensors.hpp:540(adc.init)	定义 :54,55
+hardware_claims.hpp	static-assert	ADC 域 4 条: 电压/电流引脚必须落 PA0/PA1; 通道号必须是 IN0/IN1; 平均次数 1~64; VREF>0; 分压比>1; 电流灵敏度>0	这些都是"不报错但读数看起来像那么回事"的错: 通道号填错只会读到另一个引脚	编译期	:56,58,65,66,67,69,70,72
+hardware_claims.hpp	static-assert	EXTI 域 3 条: VL53L1X GPIO1 必须接 PA3(独立向量); 端口必须是 A; XSHUT(PD2) 不能与气压计 I2C 引脚撞车	接错引脚会让 range 线程永远等不到中断(测距一直没数据); PD2 归 VL53L1X(baro SDO 已焊死 GND)	编译期	:80,83,96
+hardware_claims.hpp	static-assert	串口域 5 条: E220 必须 USART3 的 PD8/PD9 且都在端口 D; GNSS 必须 USART2 的 PD5/PD6 且都在端口 D; E220 串口速率必须是模块档位; GNSS 过期阈值必须 >=1100ms	外设号固定 => 默认 DMA 流固定, 接错表现为"能发不能收"; NEO-7M 出厂 1Hz, 阈值小于一个周期会让 speedValid 周期闪断	编译期	:106,108,110,112,116,123
+hardware_claims.hpp	static-assert	I2C 域 3 条: 气压计必须在 I2C1 的 PB6/PB7; 测距必须在 I2C2 的 PF1/PF0; 两个 I2C 器件地址不能相同	引脚填错只会读不到器件, 常被当成"传感器坏了"	编译期	:129,132,135
+hardware_claims.hpp	static-assert	SPI 域 4 条: 光流必须在 SPI3 的 PC10; PMW3901 片选不能与 SPI3 时钟/数据脚重复; 片选(PA4)与 VL53L1X 中断(PA3)不能撞车; 地址字节与数据字节之间必须 >=35us	片选撞车会抢总线; 35us 间隙不足是"读回全 0"的头号原因	编译期	:141,143,147,149
+hardware_claims.hpp	static-assert	电机域 1 条: kMap[0..3] 必须互不相同	两路映射到同一物理通道 = 那一路输出两倍	编译期	:155
+stm32f4xx_it.cpp	include	(全部 include): stm32f4xx_it.h / stm32f4xx.h / rt-thread/include/rtthread.h / dlx_nvic_it.h / app_fault.hpp	Handler 原型、TIM1/RCC/GPIOF 寄存器、rt_err_t/RT_ERROR、DLX_IT_invoke_callback、dlxExceptionHook 声明	-	★本文件是唯一中断入口文件, 全部只做 DLX_IT_invoke_callback 转发
+stm32f4xx_it.cpp	enumerator	DLX_FAULT_NONE 0 / HARD 1 / MEM 2 / BUS 3 / USAGE 4 / NMI 5	故障类型码, 同时决定 LED 短闪次数	写 g_dlxFaultKind:77 / dlxFaultTrap 调用点 :142,149,160,170,180	匿名 enum, 定义 :67; 闪码约定: 长亮 200ms 前导 + 短闪 N 次 + 组间 800ms
+stm32f4xx_it.cpp	global	g_dlxFaultKind	最后一次故障类型(volatile, 调试器可看; 陷阱内死循环不再返回)	写 :96 -> 无读者	裸全局; 正常路径恒 DLX_FAULT_NONE
+stm32f4xx_it.cpp	static-func	dlxFaultDelay(volatile uint32_t)	纯空转延时(不用 delay_ms: 它依赖 SysTick/RT-Thread, 故障时不可信)	dlxFaultTrap 内 :119,121,126,128,130	频率只需"看得出几闪"
+stm32f4xx_it.cpp	static-func	dlxFaultTrap(uint32_t kind)	(1)断动力: TIM1->DIER &= ~UDE -> CR1 &= ~CEN -> BDTR &= ~MOE; (2)LED 长亮+短闪 kind 次+组间停; (3)死等	dlxExceptionHook:149 / NMI:142 / MemManage:160 / BusFault:170 / UsageFault:180	★顺序不可反: 闪灯是给人看的, 断动力是保命的; 硬编码 PF3/TIM1; 自包含只写寄存器
+stm32f4xx_it.cpp	ISR	NMI_Handler()	NMI: 不返回, 直接进陷阱(NMI 多半是 CSS 时钟失效)	DL_LIB/startup_stm32f40xx.s 向量表	返回去只会跑在 HSI 上继续飞
+stm32f4xx_it.cpp	function	dlxExceptionHook(void*)	extern "C" RT-Thread 异常钩子: 立刻断动力+闪码, 不返回	release.cpp:82(rt_hw_exception_install)	★不返回 => 跳过 RT-Thread"打印线程信息再挂起"流程
+stm32f4xx_it.cpp	ISR	MemManage_Handler() / BusFault_Handler() / UsageFault_Handler()	MPU 违规 / 总线错误 / 非法指令未对齐除零: 各自 dlxFaultTrap	启动文件向量表 :70,:71,:72	原来各自 while(1), 现在断动力
+stm32f4xx_it.cpp	ISR	SVC_Handler() / DebugMon_Handler()	空实现, 直接返回	启动文件向量表 :77,:78	RT-Thread 未用
+stm32f4xx_it.cpp	ISR	USART1_IRQHandler()	只做 DLX_IT_invoke_callback(USART1_IRQn) 转发	启动文件向量表 :121	★有回调: release.cpp:107 usart1.init(...,uartRx) 注册 RXNE 逐字节接收(写 uartRx)
+stm32f4xx_it.cpp	ISR	USART2_IRQHandler()	只做转发	启动文件向量表 :122	默认构建无回调(CFG_FEATURE_GNSS=0); 打开后由 app_sensors.hpp:505 gnssRx.start() 注册 IDLE 切帧
+stm32f4xx_it.cpp	ISR	USART3_IRQHandler()	只做转发	启动文件向量表 :123	★有回调: app_flight_stack.hpp:492 linkUsart.init(...,linkRing) 注册 RXNE; 仅当 E220 配置成功
+stm32f4xx_it.cpp	ISR	DMA2_Stream5_IRQHandler()	只做转发	启动文件向量表 :152	★有回调: Dshot 构造注册 TC(dlx_dshot.hpp:152)换油门; 流 = DMA2_Stream5_Channel6(TIM1_UP), 优先级 P1_S0
+stm32f4xx_it.cpp	ISR	EXTI3_IRQHandler()	只做转发	启动文件向量表 :93	★有回调: app_sensors.hpp:289 rangeInt.init(...,&Sensors::onRangeIrq) 注册 VL53L1X 数据就绪
+stm32f4xx_it.cpp	ISR	EXTI0/1/2/4_IRQHandler()	只做转发	启动文件向量表 :90-94	无回调(handler 表项为 0, invoke 直接返回)
+stm32f4xx_it.cpp	ISR	EXTI9_5_IRQHandler() / EXTI15_10_IRQHandler()	只做转发(组向量, 转发器自行扫 5..9 / 10..15 线)	启动文件向量表 :107,:124	无回调
+stm32f4xx_it.cpp	ISR	TIM7_IRQHandler()	只做转发	启动文件向量表 :139	★无回调: 全仓无任何 BasicTimer(TIM7) 实例; 软定时器走 rt_timer_create 不占 TIM7
+# 不确定项: USART2/EXTI3/DMA2_Stream5 的"有回调"依赖运行期路径(CFG_FEATURE_RANGE=1 且 rangeInt.init 成功; E220 配置成功 linkUp; 只有构造 FlightStack 才会建 Dshot)
+# 不确定项: HardFault_Handler 在 stm32f4xx_it.cpp 中不存在(被注释掉), 落到启动文件的 WEAK 死循环; 项目刻意不加 IWDG, 纯逻辑死循环不可恢复
+# 不确定项: FlightRuntimeState::linkTxFail 与 logFull 全仓无写者(恒 0/false); kFlowFlagFlowValid(0x01) 无使用者

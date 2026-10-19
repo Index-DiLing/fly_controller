@@ -1,0 +1,150 @@
+app_flight_stack.hpp	include	app_flight_shared.hpp	引入 FlightShared/FlightRuntimeState/LogQueue/PerfAccum 与 logQueuePush	-	sh 成员的类型与日志入队
+app_flight_stack.hpp	include	app_link_thread.hpp	引入 LinkThreadCtx/linkTelemetryThreadEntry/时分与准入参数类型	-	链路线程上下文与入口
+app_flight_stack.hpp	include	app_log_thread.hpp	引入 LogThreadCtx/logThreadEntry	-	日志线程上下文与入口
+app_flight_stack.hpp	include	app_sensors.hpp	引入 Sensors(慢速传感器对象+采集线程+Latest 无锁快照)与五路 Sample	-	B6: 采集搬出控制环
+app_flight_stack.hpp	include	app_exception_handler.h	引入 DLX_HANDLE_EXCEPTION 与 ENABLE_EXCEPTION_DLX	-	后者的唯一开启点在本文件
+app_flight_stack.hpp	include	app_health.hpp	引入 healthSet/healthOk/healthBits	-	替代 v2.0 的一堆 bool
+app_flight_stack.hpp	include	app_bringup.hpp	引入 bringUpImu() 与 armPreconditionsMet()	-	解锁门槛的唯一裁决者
+app_flight_stack.hpp	include	app_boot_report.hpp	引入 logSystemReport/logDshotTiming/logDshotRegisterCheck/logUsartStatus/logFlashProbe/logThreadReport	-	全部只读, 不配外设
+app_flight_stack.hpp	include	app_stack.hpp	引入 stackUsedBytes()/paintStackWatermark()	-	线程栈水位线
+app_flight_stack.hpp	include	dlx_gpio.hpp	引入 GPIO 类与引脚常量	-	E220 的 M0/M1/AUX 与各片选的底层
+app_flight_stack.hpp	include	dlx_spi.hpp	引入 SPI 类与 SPI1_SA5_MIA6_MOA7() 工厂	-	spiImu 的类型
+app_flight_stack.hpp	include	dlx_iic.hpp	引入 IIC 类(Sensors 内部用)	-	-
+app_flight_stack.hpp	include	dlx_dma.hpp	引入 DMA 类	-	DShot 通道与 GNSS 循环 DMA 的底层
+app_flight_stack.hpp	include	dlx_delay.hpp	引入 delay_ms()	-	链路配置重试与 AUX 重载兜底的阻塞等待
+app_flight_stack.hpp	include	dlx_dshot.hpp	引入 Dshot 类(preloadThrottle/start/stop)	-	电机计数的最终出口
+app_flight_stack.hpp	include	dlx_timer.hpp	引入 AdvancedTimer	-	其 setDshot() 是构造期副作用
+app_flight_stack.hpp	include	BMI088/dlx_bmi088.hpp	引入 BMI088 驱动与 fifoRead/getAccelerationG/getAngularVelocityRads	-	-
+app_flight_stack.hpp	include	flight_control/flight_controller.hpp	引入 FlightController 与 FlightControlState/Setpoint/Output	-	姿态/角速度/高度环
+app_flight_stack.hpp	include	flight_control/flight_control_mixer.hpp	引入 mixMotors()	-	控制器输出 -> 四路电机(逻辑到物理映射)
+app_flight_stack.hpp	include	app_state.h	引入 State/Mode/Operation/Failsafe*/Guards/Snapshot/Task 与 stepState/admitTask/pickTask/takeTasks/estopLatched/publishSnapshot	-	状态机词汇与唯一迁移表
+app_flight_stack.hpp	include	app_task.hpp	引入 OperationIn/Out/AltitudeUse/stepOperation()	-	自动起降与缓降的纯函数状态机
+app_flight_stack.hpp	include	app_guards.hpp	引入 evaluateFailsafe/failsafeAction/linkIsSteady/applyStickFacts	-	链路与控制环共用一份判据
+app_flight_stack.hpp	include	flight_control/flight_control_fliter.hpp	引入 FlightControlFilter(EKF)/FilterParams/FlightFilterState16 与 FF_* 索引	-	16 维 EKF
+app_flight_stack.hpp	include	flight_control/optical_flow_estimator.hpp	引入 OpticalFlowEstimator	-	counts -> 机体系速度(含质量门限)
+app_flight_stack.hpp	include	flight_control/velocity_controller.hpp	引入 VelocityController	-	速度环 -> 期望姿态 + 集合油门
+app_flight_stack.hpp	include	GNSS/dlx_geo.hpp	引入 GeoOrigin/GeoJumpGate/setOriginFromFix/geoToEnuGated/trackSpeedToEnu	-	B10 WGS84 -> ENU
+app_flight_stack.hpp	include	W25Q128/dlx_flash_manager.hpp	引入 FlashManager	-	release.cpp 建好, 这里只用 app.fs 指针
+app_flight_stack.hpp	struct	FlightStack	一次飞行/串口调试运行的全部状态: 硬件对象 + 共享区 + 上电生命周期 + 控制环五步	release.cpp:291(构造)	构造不碰寄存器, 唯一例外 dshot:127
+app_flight_stack.hpp	struct	FlightStack::LoopFacts	一圈事实的纯派生快照(12 个 bool), 让遥测位与日志位共用同一批判据	gatherFacts():1760 写 -> stepPublish():1780 / stepLog():1872 读	-
+app_flight_stack.hpp	member	LoopFacts::linkOk	链路未超时 kLinkTimeoutMs	gatherFacts():1761 -> stepPublish():1787 / stepLog():1873	-
+app_flight_stack.hpp	member	LoopFacts::imuOk	IMU 健康位有效	gatherFacts():1762 -> stepPublish():1795 / stepLog():1874	-
+app_flight_stack.hpp	member	LoopFacts::baroOk	气压计健康位有效	gatherFacts():1763 -> stepPublish():1792,1796 / stepLog():1875	-
+app_flight_stack.hpp	member	LoopFacts::angleLoop	有角度环在工作(接管且非 Manual)	gatherFacts():1764 -> stepPublish():1786 / stepLog():1876	-
+app_flight_stack.hpp	member	LoopFacts::motorEnabled	动力已接管(派生自 state)	gatherFacts():1765 -> stepPublish():1784 / stepLog():1877	无第二份真相
+app_flight_stack.hpp	member	LoopFacts::motorStarting	启动序列在跑(state==Arming)	gatherFacts():1766 -> stepPublish():1785 / stepLog():1878	-
+app_flight_stack.hpp	member	LoopFacts::hardStop	急停锁存(与 FlightStack::hardStop 同名)	gatherFacts():1767 -> stepPublish():1788 / stepLog():1879	同名易误读但行为正确
+app_flight_stack.hpp	member	LoopFacts::failsafe	本架次出过失效保护(锁存)	gatherFacts():1768 -> stepPublish():1789 / stepLog():1884	-
+app_flight_stack.hpp	member	LoopFacts::logFull	日志队列满标志(共享区)	gatherFacts():1769 -> stepPublish():1790,1848 / stepLog():1881	-
+app_flight_stack.hpp	member	LoopFacts::logError	日志出口故障标志(共享区)	gatherFacts():1770 -> stepPublish():1794,1848 / stepLog():1882	-
+app_flight_stack.hpp	member	LoopFacts::flashOk	飞行模式且 fs 非空(日志能落盘)	gatherFacts():1771 -> stepLog():1880	-
+app_flight_stack.hpp	member	LoopFacts::groundMode	当前是串口调试(地面)模式	gatherFacts():1772 -> stepLog():1885	-
+app_flight_stack.hpp	member	FlightStack::app	main 建好的外部上下文(模式/flash/串口DMA/协议/渠道), 只读引用不拥有	构造:384 -> bringUpMotors():431 / startThreads():956-959 / run():2031-2054 / gatherFacts():1771	-
+app_flight_stack.hpp	member	FlightStack::flightMode	本次是正常飞行(true: 日志写 flash、串口静音)还是串口调试	构造:385 -> makeGuards():287 / stepStateMachine():1383 / startThreads():956,961 / gatherFacts():1771-1772 / run():1999,2052	const; 决定 logPeriodMs 与维护态出口
+app_flight_stack.hpp	member	FlightStack::sh	跨线程共享区(指令/遥测/负载/日志队列/线程句柄), 由临界区保护	release.cpp:292 写 tidMain / startThreads():881,955,966-967 -> 控制环各 step、链路线程 ctx->sh、日志线程 ctx->sh	控制线程写遥测, 链路线程写指令
+app_flight_stack.hpp	member	FlightStack::linkCtx	链路线程私有状态(射频/环/时分/准入/下行/回执累积)	startThreads():881-884 写 -> app_link_thread.hpp linkTelemetryThreadEntry(注册于 :947)	仅 CFG_FEATURE_LINK=1
+app_flight_stack.hpp	member	FlightStack::logCtx	日志线程上下文(共享区/flash/串口DMA/协议/信号量/调试流开关)	startThreads():955-961 写 -> app_log_thread.hpp logThreadEntry(注册于 :962)	-
+app_flight_stack.hpp	member	FlightStack::ctrlSem	控制环节拍信号量, 由 ctrlTimer 硬定时器释放	startThreads():874 建 -> run():2106 rt_sem_take(回调 :875 释放)	500Hz 控制环的心跳
+app_flight_stack.hpp	member	FlightStack::ctrlTimer	周期硬定时器(ctrl::kTickMs), 到期只释放信号量	startThreads():875 建 -> run():2072 rt_timer_start	RT_TIMER_FLAG_PERIODIC|HARD_TIMER
+app_flight_stack.hpp	member	FlightStack::linkSem	链路线程节拍信号量	startThreads():879 建 -> linkCtx.sem:884(app_link_thread.hpp:452 take)	仅 CFG_FEATURE_LINK=1
+app_flight_stack.hpp	member	FlightStack::linkTimer	链路周期硬定时器(link::kTickMs=8ms)	startThreads():880 建 -> run():2074 rt_timer_start	仅 CFG_FEATURE_LINK=1; 传 RT_NULL 会解引用空指针
+app_flight_stack.hpp	member	FlightStack::logSem	日志线程节拍信号量	startThreads():953 建 -> logCtx.sem:960	-
+app_flight_stack.hpp	member	FlightStack::logTimer	日志周期硬定时器(log::kTickMs=5ms)	startThreads():954 建 -> run():2076 rt_timer_start	★启动它之前 logger 必须仍阻塞在 sem, 否则 replyGround 撞 txBuf
+app_flight_stack.hpp	member	FlightStack::spiImu	IMU 专用 SPI1(AF5/6/7), 走无片选重载以免抢 PA3	构造:92 -> bringUpSensors():408 / bmi 构造:93	PA3 是 VL53L1X 的 GPIO1
+app_flight_stack.hpp	member	FlightStack::bmi	BMI088 加速度计+陀螺(1600/2000Hz, 硬件 FIFO)	构造:93 -> bringUpSensors():408 / stepImu():1087 fifoRead	构造不碰寄存器
+app_flight_stack.hpp	member	FlightStack::sensors	慢速传感器聚合(气压/测距/光流/GNSS/电源)+采集线程+Latest 快照	构造:97 -> bringUpSensors():413-417 / startThreads():971 / sampleBaroReference():1037,1044 / stepBaroObs:1208,1211 / stepRangeObs:1236,1240 / stepFlowObs:1264,1268 / stepGnssObs:1291,1295,1300 / stepPublish:1822	采集层不注入共享区
+app_flight_stack.hpp	member	FlightStack::linkUsart	USART3: 链路透传口(配置模式 9600 -> 工作 57600)	构造:104 -> bringUpLink():477(9600) / :492(57600+RXNE 环)	仅 CFG_FEATURE_LINK=1
+app_flight_stack.hpp	member	FlightStack::link	E220-400T22S 透传模块驱动(AT/寄存器/透传/自检证据)	构造:105 -> configureLink():779,780,788,799,818 / applyLinkConfig():670-703 / noteLinkAt():644 / bringUpLink():510-571	仅 CFG_FEATURE_LINK=1; 构造不碰寄存器
+app_flight_stack.hpp	member	FlightStack::linkRingRaw / linkRingBuf / linkRing	RXNE 接收环的原始存储 / 字节缓冲视图 / 供链路线程消费的环	:119,120,121 -> bringUpLink():492 开 RXNE / startThreads():883 交给 linkCtx / USART3 RXNE ISR 写	仅 CFG_FEATURE_LINK=1; 刻意不用 DMA+IDLE(DMA 接收实测卡死)
+app_flight_stack.hpp	member	FlightStack::timer1	TIM1 高级定时器: DShot 时基与主输出(MOE)	构造:126 setDshot 配时基 -> applyEffects():306-307 启 / :334-335 停	停动力必须先 stop 再关 MOE
+app_flight_stack.hpp	member	FlightStack::dshot	DShot 输出(计数 -> 引脚); 构造即 setDshot()	构造:127 -> applyEffects():305,308,336 / stepControl():1740 preloadThrottle	★唯一构造期配寄存器的成员, 故 logDshotTiming 必须提前
+app_flight_stack.hpp	member	FlightStack::ekf	16 维 EKF(快路径名义积分 + 慢路径 15x15 协方差, ~1.1KB)	initEkf():1029-1030 / stepImu():1116,1120,1123,1124 / stepBaroObs:1223 / stepRangeObs:1249 / stepFlowObs:1281,1282 / stepGnssObs:1311 / applyEffects:330 reset / stepAssembleInputs:1330,1332,1333 / stepControl:1685 / stepPublish:1779,1813 / stepLog:1913	快慢两路径, 参数二十余项全部来自 cfg
+app_flight_stack.hpp	member	FlightStack::controller	姿态/角速度/高度控制器(PID 参数见 flight_control_params.hpp)	构造:131 -> stepControl():1681 updateAngle, :1704/:1718 updateAngleHeight, :1723 updateAngle, :1727 params()	四档控制律的唯一执行体
+app_flight_stack.hpp	member	FlightStack::acbb / gybb / acb / gyb	IMU FIFO 出队队列的原始存储与字节缓冲视图	:134-137 -> queue ctor:138,139	各 256B, 容量 = 42(256/6)
+app_flight_stack.hpp	member	FlightStack::ac / gy	本圈从 FIFO 取出的加速度/陀螺样本队列(用完 clear)	:138,139 -> stepImu():1087,1088,1094,1102,1105,1131,1135,1136	陀螺是积分主时钟(2000Hz)
+app_flight_stack.hpp	member	FlightStack::bringUpRec	上电期异常记录器: 上电写、运行期只读; 解锁门槛与自检报告都读它	写 bringUpSensors:408,413-417 / configureLink:781,793,823,828 / noteLinkAt:644 / startThreads:982 -> 读 stepStateMachine:1383 / bringUpLink:573 / run:2057-2064,2103	36 字节, v2.0 BringUpReport 的替代品
+app_flight_stack.hpp	member	FlightStack::linkVer / linkType	模块固件版本 / 型号字符串	写 configureLink():788-791,799-802 -> 读 bringUpLink():530,531	仅 CFG_FEATURE_LINK=1
+app_flight_stack.hpp	member	FlightStack::linkAttempts	整段配置实际试了几轮(>1 提示接线/波特率)	写 bringUpLink():482 -> 读 :524	仅 CFG_FEATURE_LINK=1
+app_flight_stack.hpp	member	FlightStack::linkKeyWritten	AT+KEY 是否写成功(密钥只写不可读, 回读校验覆盖不到)	写 applyLinkConfig():696 -> 读 bringUpLink():537	仅 CFG_FEATURE_LINK=1; 不一致时症状同"距离不够"
+app_flight_stack.hpp	member	FlightStack::lastBaroStamp / lastRangeStamp / lastFlowStamp / lastGnssStamp	上次消费快照的序号	写 stepBaroObs:1211 / stepRangeObs:1239 / stepFlowObs:1267 / stepGnssObs:1294 -> 同函数内比较	★防止同一份观测被重复喂 EKF(不判会把量测噪声除 25)
+app_flight_stack.hpp	member	FlightStack::rangeObsValid	本圈测距观测是否进了 EKF	清 stepObservers():1193 / 置 stepRangeObs():1251 -> 无读者	★只写不读, 疑似死量
+app_flight_stack.hpp	member	FlightStack::flowValid	本圈光流估计有效(速度环与日志的许可位)	清 stepObservers():1194 / 置 stepFlowObs():1278 -> stepControl():1683	被门限拒就保持 false
+app_flight_stack.hpp	member	FlightStack::velHoldActive	本圈速度环是否接管了水平速度	清 stepControl():1605 / 置 :1705 -> 无读者	★只写不读, 疑似死量
+app_flight_stack.hpp	member	FlightStack::lastFlow	最近一份光流快照(原始 dx/dy/squal/dtMs/tickMs)	写 stepFlowObs():1268 -> 读 stepLog():1927-1930	日志要能分清"没数据/被拒/尺度算错"
+app_flight_stack.hpp	member	FlightStack::flowFlags	本圈哪几路水平观测有效(RangeOk/VelHold/GnssVel 位)	清 stepObservers():1195 / 置 stepRangeObs:1252, stepFlowObs:1283, stepGnssObs:1312 -> 读 stepLog():1931	只记"观测真的进了 EKF"
+app_flight_stack.hpp	member	FlightStack::rangeM	最近一次有效测距[m](日志用)	写 stepRangeObs():1250 -> 读 stepLog():1926	量程外不更新
+app_flight_stack.hpp	member	FlightStack::flowEst	光流估计器(counts -> 机体系速度)	initObservers():1147-1162 配参+reset -> stepFlowObs():1272 feed	需要"当时高度+当时陀螺", 故换算在控制环
+app_flight_stack.hpp	member	FlightStack::velCtrl	水平速度环	initObservers():1164-1177 配参+reset -> stepControl():1684 paramsSane, :1688 update	输出期望姿态, 集合油门仍来自高度环
+app_flight_stack.hpp	static-const	FlightStack::kGnssMaxStepM	单帧 GNSS 位置跳变上限 50m: 物理不可能判据, 刻意不做配置项	stepGnssObs():1323 -> geoToEnuGated()	1Hz 下 30m/s 也只有 30m
+app_flight_stack.hpp	member	FlightStack::geoOrigin	ENU 局部切平面原点(首次通过质量门槛的有效定位时钉住)	写 stepGnssObs():1300 -> 读 :1299,1304,1323	-
+app_flight_stack.hpp	member	FlightStack::geoJump	位置跳变门限状态(参考点+上次拒绝)	stepGnssObs():1323 读写	不读返回值, 只要状态被更新
+app_flight_stack.hpp	member	FlightStack::baroAbs	最近一次绝对气压高度[m]	写 stepBaroObs():1217, sampleBaroReference():1045,1049 -> 读 :1050,1226, stepLog():1907	仅 CFG_FEATURE_BARO=1 时才更新(当前 =0)
+app_flight_stack.hpp	member	FlightStack::baroRel / baroRef / baroRefSet	相对起飞点高度 / 起飞点基准 / 基准是否已定	写 stepBaroObs:1219,1220,1222, applyEffects:324-326, sampleBaroReference:1050,1051 -> 读 stepBaroObs:1218,1222,1223, stepLog:1906	两条来源: 上电采样与 ARM 累积
+app_flight_stack.hpp	member	FlightStack::baroZeroPending / baroZeroSum / baroZeroCnt	正在为本次起飞累积气压基准 / 累积和 / 样本数	写 applyEffects():314-316,328,337 -> 读 stepBaroObs():1225-1227, applyEffects():322-324	★绝不在 ARM 时 mdelay 求平均(会溢 FIFO); 复用气压快照不额外读传感器
+app_flight_stack.hpp	member	FlightStack::fcs	控制器输入(FlightControlState)	写 stepAssembleInputs():1330-1334 -> applyEffects:330 / makeGuards:292 / stepAltitudeTarget:1513,1534,1535 / stepControl 传参 / stepPublish:1803,1804,1814,1816 / stepLog:1893,1904,1905	垂速有效位 = 有气压或测距
+app_flight_stack.hpp	member	FlightStack::lastAcc / lastGyro	最近一次重映射后的加速度[g] / 机体角速度[rad/s]	写 stepImu():1097,1108,1114,1132 -> read lastGyro stepFlowObs():1274 / stepAssembleInputs():1331 / lastAcc stepLog():1894	光流换算必须用同一刻的陀螺
+app_flight_stack.hpp	member	FlightStack::out	本圈控制器输出(力矩/角速度设定/集合油门)	stepControl():1603,1682,1688-1724 写 -> stepLog():1895,1896,1902 读	-
+app_flight_stack.hpp	member	FlightStack::q	本圈发布出去的姿态四元数(EKF)	写 stepPublish():1779 -> 读 stepLog():1888-1891	遥测用 sh.rt.telem.quat(同一份)
+app_flight_stack.hpp	member	FlightStack::eventFlags	事件位累积(ARM/EKF归零/上锁/命令变/饱和/失效保护), 随日志归档后清零	写 applyEffects:309,331,338 / applyInPlace:1353,1362 / stepStateMachine:1403,1444 / stepControl:1743 / stepPublish:1845,1849,1852 -> 读 stepLog():1869, 清 :1936	模式切换复用 CommandChanged 位
+app_flight_stack.hpp	member	FlightStack::lastCmd	上一圈指令字(抓"指令变了"的边沿)	写 stepPublish():1846 -> 比较 :1844	-
+app_flight_stack.hpp	member	FlightStack::imuCnt / imuDtAccum	快路径积分样本计数 / 慢路径累计 dt	写 stepImu():1117,1118,1126,1127 -> 读 :1118,1120	★慢路径降频闸: 满 kDecim=8 才传一次协方差(250Hz)
+app_flight_stack.hpp	member	FlightStack::baroUpdated	本周期是否更新了气压高度	清 stepObservers():1192 / 置 stepBaroObs():1224 -> 读 stepPublish():1851	减压期关闭时恒 false
+app_flight_stack.hpp	member	FlightStack::pidSat	本圈有一路电机输出进饱和区(<=55 或 >=1945)	写 stepControl():1604,1733 -> 读 :1602(prevSat 抗饱和), :1742, stepLog():1883	-
+app_flight_stack.hpp	member	FlightStack::lastLogMs / lastPerfMs / lastLoopCyc / logCounter / perfWarmup	日志限频时刻 / 负载上报时刻 / 上圈起点周期 / 归档条数 / 热身剩余圈	见各 step 内部	perfWarmup 防首圈 5ms 造成假超预算
+app_flight_stack.hpp	member	FlightStack::logPeriodMs	日志周期: 飞行 kFlightPeriodMs(20ms) / 调试 kDebugPeriodMs(10ms)	构造:386 初值(const) -> 读 stepLog():1859	50Hz / 100Hz
+app_flight_stack.hpp	member	FlightStack::now_ms	本圈时刻[ms], 每圈取一次供全圈使用	写 startPhase():366 / stepSampleShared():1073 -> makeGuards:291,295 / stepStateMachine:1462 / gatherFacts:1761 / stepLog:1859,1863,1867 / stepPerf:1963	startPhase 也刷新(上电三段不在控制环里)
+app_flight_stack.hpp	member	FlightStack::loopStartCyc	本圈起点的 DWT 周期数	写 stepSampleShared():1063 -> 读 stepLog():1860,1868,1937 / stepPerf():1950,1954	负载统计基准
+app_flight_stack.hpp	member	FlightStack::lastValid / cmd / motor[4] / manThr / sp	本圈从共享区抄出的: 最近有效上行时刻 / 指令字 / 四路电机 / 手动油门 / 期望	写 stepSampleShared():1065-1071 -> lastValid 读 makeGuards:295, gatherFacts:1761, stepLog:1867; cmd 读 stepPublish:1844,1846; manThr 读 stepPilotThrottle:1593,1596, stepLog:1903; sp 读 stepControl:1608, stepLog:1898,1901	数据来源是链路线程
+app_flight_stack.hpp	member	FlightStack::bootReadyNow	上电期门槛(每圈算一次): 解锁与 DL_ACK 共用同一次计算	写 stepStateMachine():1383 -> 读 makeGuards:286 / stepPublish:1840(发布到共享区)	armPreconditionsMet 的结果
+app_flight_stack.hpp	member	FlightStack::taskWord / estopNow	本圈取到的请求位图(读出即清) / ESTOP 是否锁存	写 stepSampleShared():1079,1080 -> 读 stepStateMachine:1408(pickTask), :1405	读出与清空在同一临界区
+app_flight_stack.hpp	member	FlightStack::state	唯一权威的 7 态状态机状态(取代 v2.0 的五个影子量)	写 startPhase:374 / stepStateMachine:1461 -> 读 startPhase:368, stepStateMachine:1387,1399,1420,1433,1456,1460,1473, stepAltitudeTarget:1501, stepControl:1607,1639,1647,1739, gatherFacts:1764-1766, stepPublish:1807,1833	★"为什么电机在转"只剩一个答案
+app_flight_stack.hpp	member	FlightStack::mode	当前飞行模式(控制环写, 链路只发请求)	写 applyInPlace:1347 / stepStateMachine:1475 -> 读 makeGuards:288, stepAltitudeTarget:1498,1506,1510,1559,1561, stepPilotThrottle:1575,1576, stepControl:1630,1683,1706, gatherFacts:1764, stepPublish:1834	受 degradeMode 只降不升约束
+app_flight_stack.hpp	member	FlightStack::operation / opStage	会自动结束的请求(起飞/降落) / 操作子阶段(驱动斜坡, 不上线)	写 applyInPlace:1356,1361 / stepAltitudeTarget:1541,1542 -> 读 stepAltitudeTarget:1529,1530, stepPublish:1835	不变量: operation==None => opStage==0
+app_flight_stack.hpp	member	FlightStack::fsLevel / fsReason	失效保护等级(取最严重一条) / 原因码	写 stepStateMachine:1387 -> 读 :1401, makeGuards:289,290, stepPublish:1836,1837	实时重算不锁存
+app_flight_stack.hpp	member	FlightStack::armOrigin	从哪个状态解锁的(扁平模型的返回地址)	写 stepStateMachine:1456 -> 读 makeGuards:293	只在 ARM 那一刻记
+app_flight_stack.hpp	member	FlightStack::stateEnteredMs	进入当前状态的时刻(只给 Arming 最短驻留用)	写 startPhase:375 / stepStateMachine:1462 -> 读 makeGuards:291	-
+app_flight_stack.hpp	member	FlightStack::failsafeLatch / hardStop / hoverLandActive	本架次出过失效保护(锁存) / 急停锁存 / 本圈是否在原地缓降(派生)	写 stepStateMachine:1400,1402,1405 -> 读 gatherFacts:1767,1768, stepAltitudeTarget:1537	只作遥测/日志留痕
+app_flight_stack.hpp	member	FlightStack::altTargetM / altTargetValid	四种飞行阶段共用的唯一高度指令[m] / 是否有效	写 stepAltitudeTarget:1502,1508,1514,1543,1562,1568 -> 读 :1512,1530, stepControl:1690,1716	★突变不在这里限幅(vz_sp 已被 VZ_MAX_* 夹住)
+app_flight_stack.hpp	member	FlightStack::modePrev	上一圈的模式(抓进入/掉出某模式的边沿)	写 stepAltitudeTarget:1569 -> 读 :1498, stepPilotThrottle:1576	降级检测的关键
+app_flight_stack.hpp	member	FlightStack::manThrEff / manThrHold	本圈真正使用的飞行员油门 / 兜底是否生效	写 stepPilotThrottle:1578,1579,1588,1594,1596 -> 读 :1596, stepControl:1611	★避免"定高降级当场掉高"; manThr>0.05 即解除
+app_flight_stack.hpp	member	FlightStack::taskAlt	本圈高度环的用途(None/Idle 已触地/Hold 操作接管)	写 stepAltitudeTarget:1544 -> 读 :1540,1557, stepControl:1669,1699,1707	Hold 时任何非测试模式都由高度环给油门
+app_flight_stack.hpp	member	FlightStack::taskHandoverToStab	自动起飞把高度交回自稳时的一次性交接标志	写 stepAltitudeTarget:1560 -> 读 stepPilotThrottle:1587,1589 读后即清	与"从定高降级"共用同一兜底
+app_flight_stack.hpp	method	FlightStack::FlightStack(ReleaseContext&)	只记上下文与日志周期; 飞行模式无 flash 时置 sh.rt.logError 并报 LOG_NO_SINK	release.cpp:291	构造不碰寄存器(dshot 除外)
+app_flight_stack.hpp	method	FlightStack::makeGuards()	把本圈事实(健康位/门槛/杆量/estop/链路)拼成 app::Guards 纯数据	gatherFacts 前的准备: makeGuards 被 startPhase:367 / stepStateMachine:1386 调用	const
+app_flight_stack.hpp	method	FlightStack::applyEffects()	迁移那一拍执行一次的四类副作用	startPhase:377 / applyInPlace:1349 / stepStateMachine:1464	StartPower=启时基+MOE+DShot 并开始累积气压基准; Takeover(仅 Arming 到 Armed)=提交气压基准 + EKF 高度垂速归零; StopPower=停 DShot/时基/关 MOE; PurgeDirect=临界区内清 sh.rt.motorCmdValue 四路(进 Manual 那拍)
+app_flight_stack.hpp	method	FlightStack::startPhase()	上电三段的一步, 与运行期共用同一执行点	run():2002,2003,2021	顺序代码推进不可被外部请求打断; 不匹配报 STATE_ILLEGAL_TRANSITION
+app_flight_stack.hpp	method	FlightStack::bringUpSensors()	接线 + 逐个调 bringUp(IMU/气压/测距/光流/GNSS/电源), 结论全进 bringUpRec	run():2006	IMU 成功才置 health::imu
+app_flight_stack.hpp	method	FlightStack::bringUpMotors()	只做寄存器回读与 USART 状态打印(setDshot 已在构造里做完)	run():2007	气压计被编译期关掉写 OFF 而不是 FAIL
+app_flight_stack.hpp	method	FlightStack::bringUpLink()	链路起电: 走线自检 -> 9600 配置 -> 整段重试 -> 切 57600+RXNE -> 透传自检 -> 置健康位	run():2008	#if CFG_FEATURE_LINK=1 时碰 USART3 并建链路; =0 时只打"收不到指令不能解锁", 不碰 USART3
+app_flight_stack.hpp	static-method	FlightStack::airRateCode()	cfg::AirRate 档位 -> REG0[2:0] 寄存器码的显式表(不能直接 cast, 会静默错档)	bringUpLink():525,526 / expectedLinkRegs():610	仅 CFG_FEATURE_LINK=1
+app_flight_stack.hpp	static-method	FlightStack::expectedLinkRegs()	本工程期望的 REG0..REG3(回读校验与自检打印的唯一期望值)	applyLinkConfig():664	仅 CFG_FEATURE_LINK=1
+app_flight_stack.hpp	static-method	FlightStack::linkFailCode()	E220 驱动的五种失败原因 -> 五个互不相同的 ExceptionCode	noteLinkAt():644 / configureLink():781,793,823 / applyLinkConfig():717	仅 CFG_FEATURE_LINK=1; v2.0 把它们全报成 LINK_CONFIG_FAILED
+app_flight_stack.hpp	method	FlightStack::noteLinkAt()	一条 AT 指令失败时把原因记进记录器(成功什么都不记)	applyLinkConfig():670,673,674,675,677,681,682,683,684,685,697,703	仅 CFG_FEATURE_LINK=1
+app_flight_stack.hpp	method	FlightStack::applyLinkConfig()	配置模式下写参数(全走 AT) + 读回 00h..05h 逐字节校验, 不一致再打 HEX 原始回读	configureLink():805	仅 CFG_FEATURE_LINK=1; 不用 HEX 连写(会中途切波特率)
+app_flight_stack.hpp	method	FlightStack::configureLink()	刚上电到可用透传的完整一次配置: begin -> 配置模式自证 -> 版本型号 -> 写 AT+回读 -> 回透传	bringUpLink():483	仅 CFG_FEATURE_LINK=1; 不切本机串口速率(那一步在 bringUpLink 之后)
+app_flight_stack.hpp	static-method	FlightStack::linkErrorHint()	把记录器里的链路失败码翻译成"下一步该查什么"	bringUpLink():573	const; 读记录器而不是单个码, 以区分 AT 超时 vs AUX 不动
+app_flight_stack.hpp	method	FlightStack::startThreads()	建三个信号量+三个硬定时器、建链路线程与日志线程、启采集线程, 失败记 SCHED_THREAD_START_FAILED	run():2049	部分受 #if CFG_FEATURE_LINK: linkSem/linkTimer/链路线程与 linkTid 判据仅 =1 时存在(=0 时只判 logTid)
+app_flight_stack.hpp	method	FlightStack::initEkf()	把 cfg::ekf::* 二十余项显式接进 EKF 参数再 reset(漏接 = 改了配置不生效)	run():2044	最危险的是 gyro_bias_limit 与 gravity_mss
+app_flight_stack.hpp	method	FlightStack::sampleBaroReference()	采样 16 次求平均得起飞点气压基准, 阻塞约 800ms, 只在非飞行/上电阶段	run():2046	函数体仅在 CFG_FEATURE_BARO=1 时有内容(当前 =0, 编译后为空)
+app_flight_stack.hpp	method	FlightStack::stepSampleShared()	第 1 步: 临界区抄指令/油门/设定/时刻/电机, takeTasks 取走即清	run():2107	顺序 2107 到 2115 共九步
+app_flight_stack.hpp	method	FlightStack::stepImu()	第 2 步: FIFO 出队 -> 逐样本名义积分(2000Hz) -> 按 kDecim 传协方差+加速度更新	run():2108	加速度按比例"最近"匹配给陀螺样本; 末尾 clear 队列
+app_flight_stack.hpp	method	FlightStack::initObservers()	把光流估计器与速度环的二十余项参数集中从 cfg 填入并 reset	run():2045	与 initEkf 同一教训: 参数散落会静默不生效
+app_flight_stack.hpp	method	FlightStack::stepObservers()	第 3 步: 清本圈有效位, 依次跑气压/测距/光流/GNSS 四路观测	run():2109	只读快照, 一次阻塞总线事务都没有(B6)
+app_flight_stack.hpp	method	FlightStack::stepBaroObs()	气压高度观测: 序号变了才读快照 -> 相对高度 -> 喂 EKF, 并顺带累积起飞基准	stepObservers():1197	函数体仅在 CFG_FEATURE_BARO=1 时存在(当前 =0, 恒不更新)
+app_flight_stack.hpp	method	FlightStack::stepRangeObs()	测距观测: 量程内才喂 EKF, 成功才置 rangeM/rangeObsValid/FlowFlagRangeOk	stepObservers():1198	σ 与门限留在 EKF 参数里, 此处不传
+app_flight_stack.hpp	method	FlightStack::stepFlowObs()	光流观测: counts -> 机体系速度 -> 转世界系 -> 喂 EKF 水平速度	stepObservers():1199	换算在控制环做(需要同一刻的高度与陀螺)
+app_flight_stack.hpp	method	FlightStack::stepGnssObs()	GNSS 观测: 首次有效定位钉原点; 速度进 EKF, 位置只过门限做 ENU 不留消费者	stepObservers():1200	位置刻意不进 EKF(噪声大且无交叉验证)
+app_flight_stack.hpp	method	FlightStack::stepAssembleInputs()	第 4 步: 用 EKF 输出填 fcs(姿态/机体系角速度/高度/垂速)	run():2110	垂速有效位 = 有气压或测距健康位
+app_flight_stack.hpp	method	FlightStack::applyInPlace()	不移动 state 的请求(模式切换/起降/取消)只提交到 mode 或 operation	stepStateMachine():1448	进 Manual 时顺带执行 effectPurgeDirect; 换操作复位 opStage
+app_flight_stack.hpp	method	FlightStack::stepStateMachine()	第 5 步(唯一权威执行点): 门槛 -> 失效保护 -> 挑请求 -> 准入 -> 查表迁移 -> 降级 -> 高度目标	run():2111	碰撞时报 STATE_COMMAND_REJECTED 但仍执行最保守那一位
+app_flight_stack.hpp	method	FlightStack::stepAltitudeTarget()	高度目标生成器(M3): 定高/定速/操作斜坡/缓降共用一个 altTargetM 与 taskAlt	stepStateMachine():1481	末尾统一 constrain 到 kAltMinM..kAltMaxM
+app_flight_stack.hpp	method	FlightStack::stepPilotThrottle()	飞行员油门的降级/交付兜底: 先钉在悬停油门, 等非零油门再交还	stepStateMachine():1482	判据是 modePrev 与 taskHandoverToStab
+app_flight_stack.hpp	method	FlightStack::stepControl()	第 6 步: 按模式分派(Manual 直控/速度环/高度环/自稳)+混控+DShot preload	run():2112	只有 isTakeover(state) 才写电机; 速度环不可用时无条件回退到高度环
+app_flight_stack.hpp	method	FlightStack::gatherFacts()	把本圈事实算成 LoopFacts(遥测位与日志位共用同一批事实, 只算一次)	stepPublish():1780 / stepLog():1872	const
+app_flight_stack.hpp	method	FlightStack::stepPublish()	第 7 步: 回写遥测(电机/姿态/高度/状态位/速度/电池)+发状态快照+置事件位	run():2113	整个回写在一个临界区里; 快照由 app::publishSnapshot 一次取一份
+app_flight_stack.hpp	method	FlightStack::stepLog()	第 8 步: 按周期打包 LogEntry 入队, 之后清 eventFlags	run():2114	队列满/出错位一起进 flags; 事件位随归档清零
+app_flight_stack.hpp	method	FlightStack::stepPerf()	第 9 步: 负载统计窗口, 热身圈内返回 false(不进统计)	run():2115	每 kPerfReportMs 汇总一次并清零累加器
+app_flight_stack.hpp	method	FlightStack::run()	上电自检固定顺序后进控制环死循环(不返回)	release.cpp:293	顺序: logDshotTiming(release.cpp:289) -> startPhase:2002,2003 -> logSystemReport:2004 -> bringUp*:2006-2008 -> startPhase(InitHighDone):2021 -> initEkf/initObservers/sampleBaroReference:2044-2046 -> startThreads:2049 -> rt_timer_start:2072,2074,2076 -> ENABLE_EXCEPTION_DLX:2101 -> while{ctrlSem:2106, 九步:2107-2115}
+# 不确定项1: LoopFacts::hardStop 与 FlightStack::hardStop 同名, gatherFacts:1767 取的是外层成员
+# 不确定项2: rangeObsValid 与 velHoldActive 已核实全仓只写不读, 疑似死量
+# 不确定项3: 本文件无自由函数、无 #define 宏、无 using/typedef 别名; CFG_FEATURE_* 分支共 8 处, 只有 LINK 与 BARO 两种

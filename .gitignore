@@ -7,8 +7,7 @@
 # project out
 /build
 /bin
-/obj
-/out
+/obj/out
 
 # eide template
 *.ept
@@ -42,3 +41,15 @@ global.h
 global.cpp
 FLIGHT_REPORT.md
 RTE_Components.h
+
+# one-off sandbox ACL diagnosis report (no changes were made)
+/.acl-recovery/
+
+# Archived build output and source snapshots
+/archive/legacy_keil/Objects/
+/archive/snapshots/*.zip
+
+# 链路 v2 本地测量/生成物（日志、P0 原始数据、仿真输出）
+/test-data/
+/test/bench/_out/
+/test/link_v2/sim/out/

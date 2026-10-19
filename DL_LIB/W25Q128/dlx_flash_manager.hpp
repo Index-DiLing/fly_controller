@@ -147,7 +147,10 @@ namespace dlx
                 != FunctionResult::SUCCESS) {
                 return FunctionResult::FAILED;
             }
-            err = created ? ExceptionCode::FLASH_SYSTEM_CREATED : ExceptionCode::FLASH_OK;
+            if (created) {
+                err = ExceptionCode::FLASH_SYSTEM_CREATED; // 提示性: 这次是新整片建起来的(调用仍算成功)
+            }
+            // 没建新文件系统时**不写 err**: 成功路径不写码(异常码里没有"OK", 见 dlx_exception.h)
             return FunctionResult::SUCCESS;
         }
 
@@ -211,7 +214,6 @@ namespace dlx
                 return FunctionResult::FAILED;
             }
             if (count == 0u) {
-                err = ExceptionCode::FLASH_OK;
                 return FunctionResult::SUCCESS;
             }
 
@@ -222,7 +224,6 @@ namespace dlx
                 return FunctionResult::FAILED;
             }
             if (empty) {
-                err = ExceptionCode::FLASH_OK; // 本来就没有会话
                 return FunctionResult::SUCCESS;
             }
 
@@ -252,7 +253,6 @@ namespace dlx
                 cur = next;
             }
             if (dropSlots == 0u) {
-                err = ExceptionCode::FLASH_OK; // 没有可丢的历史会话
                 return FunctionResult::SUCCESS;
             }
 
@@ -272,7 +272,6 @@ namespace dlx
                 != FunctionResult::SUCCESS) {
                 return FunctionResult::FAILED;
             }
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -343,7 +342,9 @@ namespace dlx
             }
             ++slotEntries;
             ++entryCount;
-            err = overwroteOldest ? ExceptionCode::FLASH_LOG_OVERWRITTEN : ExceptionCode::FLASH_OK;
+            if (overwroteOldest) {
+                err = ExceptionCode::FLASH_LOG_OVERWRITTEN; // 提示性: 环绕覆写了最旧的日志槽
+            }
             return FunctionResult::SUCCESS;
         }
 
@@ -373,7 +374,6 @@ namespace dlx
                 return FunctionResult::FAILED;
             }
             if (empty) {
-                err = ExceptionCode::FLASH_OK;
                 return FunctionResult::SUCCESS;
             }
 
@@ -397,7 +397,6 @@ namespace dlx
                     info.regionBytes = info.slotCount * FLASH_LOG_SLOT_SIZE;
                     info.active = (lastSlot == newest.index);
                     if (!callback(info, ctx)) {
-                        err = ExceptionCode::FLASH_OK;
                         return FunctionResult::SUCCESS;
                     }
                     info.sessionId = cur.sessionId;
@@ -423,7 +422,6 @@ namespace dlx
                 cur = next;
             }
 
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -491,16 +489,13 @@ namespace dlx
                 for (uint32_t i = 0; i < FLASH_LOG_ENTRIES_PER_SLOT; ++i) {
                     LogEntry entry;
                     if (!readFrame(logEntryAddr(cur.index, i), entry)) {
-                        err = ExceptionCode::FLASH_OK;
                         return FunctionResult::SUCCESS; // 读到没写完的记录(或槽尾空区): 本次会话到此为止
                     }
                     if (entry.type != static_cast<uint8_t>(FlashRecordType::Entry)
                         || entry.sessionId != targetSession) {
-                        err = ExceptionCode::FLASH_OK;
                         return FunctionResult::SUCCESS;
                     }
                     if (!callback(entry, ctx)) {
-                        err = ExceptionCode::FLASH_OK;
                         return FunctionResult::SUCCESS;
                     }
                 }
@@ -513,7 +508,6 @@ namespace dlx
                     cur = next;
                 }
             }
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -534,7 +528,6 @@ namespace dlx
                 return FunctionResult::FAILED;
             }
             out = newest.data;
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -556,7 +549,6 @@ namespace dlx
                 return FunctionResult::FAILED;
             }
             out = newest.data;
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -597,7 +589,6 @@ namespace dlx
                 err = ExceptionCode::FLASH_WRITE_FAILED;
                 return FunctionResult::FAILED;
             }
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -749,15 +740,23 @@ namespace dlx
 
         bool checkHardware(ExceptionCode &err)
         {
-            const uint32_t jedec = flash.readJEDEC();
             const uint32_t expect = (static_cast<uint32_t>(W25Q128_MANUFACTURER_ID) << 16)
                                   | (static_cast<uint32_t>(W25Q128_MEMORY_TYPE) << 8)
                                   | static_cast<uint32_t>(W25Q128_CAPACITY_ID);
-            if (jedec != expect) {
-                err = ExceptionCode::FLASH_HARDWARE_ERROR;
-                return false;
+            // 现场问题(2026-10-18): flash.init() 刚校验过 ID, 紧接着这里再读一次却偶发失败
+            // (日志 "[Flash] init=FAILED err=0x0103 用时=0ms"), 芯片随后又能正常读写 ——
+            // 这是**芯片瞬时不响应**(本板 /CS 无上拉, 复位期浮空, 见 dlx_w25q128_config.h),
+            // 不是硬件损坏. 单次失败就判死刑会白白丢掉一次飞行日志, 所以这里也带重试.
+            for (uint8_t attempt = 0; attempt < 3u; ++attempt) {
+                if (attempt != 0u) {
+                    delay_ms(2);
+                }
+                if (flash.readJEDEC() == expect) {
+                    return true;
+                }
             }
-            return true;
+            err = ExceptionCode::FLASH_HARDWARE_ERROR;
+            return false;
         }
 
         // ---------------- 元数据段 ----------------
@@ -791,7 +790,6 @@ namespace dlx
                 }
             }
             if (!haveSector) {
-                err = ExceptionCode::FLASH_OK;
                 return FunctionResult::SUCCESS;
             }
 
@@ -812,7 +810,6 @@ namespace dlx
                     out = rec;
                 }
             }
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -868,7 +865,6 @@ namespace dlx
                 err = ExceptionCode::FLASH_WRITE_FAILED;
                 return FunctionResult::FAILED;
             }
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -919,7 +915,6 @@ namespace dlx
                 return FunctionResult::FAILED;
             }
             ready = true;
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -992,7 +987,6 @@ namespace dlx
                 }
             }
             if (empty) {
-                err = ExceptionCode::FLASH_OK;
                 return FunctionResult::SUCCESS;
             }
 
@@ -1007,7 +1001,6 @@ namespace dlx
                 cur = prev;
             }
             oldest = cur;
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -1026,7 +1019,6 @@ namespace dlx
                 err = ExceptionCode::FLASH_WRITE_FAILED;
                 return FunctionResult::FAILED;
             }
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 
@@ -1110,7 +1102,6 @@ namespace dlx
                 err = ExceptionCode::FLASH_SESSION_NOT_FOUND;
                 return FunctionResult::FAILED;
             }
-            err = ExceptionCode::FLASH_OK;
             return FunctionResult::SUCCESS;
         }
 

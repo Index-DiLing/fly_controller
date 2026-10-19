@@ -1,0 +1,109 @@
+app_state.h	include	<stdint.h>	叶子头: 只依赖 stdint。DL_LIB 绝不 include 本文件(方案 D17), 本文件也不 include DL_LIB —— 状态词汇不该依赖定时器/中断锁实现	-	反向依赖的守门人
+app_state.h	namespace	app	状态机全部业务词汇: State/Task/Mode/Operation/FailsafeLevel/Reason/GroundStatus/CommandOp + 迁移表/准入表/失效保护表	全仓	存放在 .cpp 的匿名命名空间, 头文件只暴露接口
+app_state.h	constexpr	motorArmDelayMs	3200ms: 启动序列最短驻留。桨开始转 -> 控制接管的唯一判据(timer/dshot 的 start/stop 全是 void, 没有可检测的失败条件)	internalEvent() app_state.cpp:281 / test/state_step_test.cpp:175,177	★与 cfg::control::kMotorArmDelayMs 同值, 是第二份真相
+app_state.h	constexpr	minValidUplink	8: 链路稳的门槛 = 连续**采信**的上行帧数(累计收到不算数, 断一次归零)	linkIsSteady() app_guards.hpp:65 / linkStateOf() app_state.h:587 / test:545,546,810-813	与 cfg::link::arm::kMinValidUplink 同值
+app_state.h	constexpr	linkTimeoutMs	2000: 上行丢失多久算链路超时	**无调用方**	★定义未使用; 真用的是 cfg::link::failsafe::kLinkTimeoutMs(app_flight_stack.hpp:1761 / app_log_thread.hpp:329)
+app_state.h	constexpr	hoverLandMs	2000: 链路丢失后要**持续**多久才动作(缓降)。与 linkTimeoutMs 同值但语义不同: 前者是多久算丢, 后者是丢了多久才动手	makeGuards() app_flight_stack.hpp:295 / test:347	-
+app_state.h	namespace	health	app::health::* 八个健康位。回答这个数据源**现在**能不能用, 实时值不锁存; 每位一个写者, 读写成对用 healthSet/healthClear/healthOk/healthBits	全仓	位 0x80 无写者(见 logOk)
+app_state.h	constexpr	health::link	0x01 遥控链路: 连续收到有效上行帧	写 healthSet app_flight_stack.hpp:520, healthClear+Set app_link_thread.hpp:495,498 / 读 linkIsSteady app_guards.hpp:65, failsafeConditionsFromHealth app_state.cpp:437	-
+app_state.h	constexpr	health::imu	0x02 IMU 自检通过且数据新鲜	写 healthSet app_flight_stack.hpp:410(bringUpSensors) / 读 checkArmPreconditions app_state.cpp:336, modeRules app_state.cpp:152-154, gatherFacts app_flight_stack.hpp:1762, telemetry error :1795	-
+app_state.h	constexpr	health::baro	0x04 气压计可用	写 healthSet/Clear app_sensors.hpp:674,681(baroLoop) / 读 modeRules(heightAny), failsafeConditionsFromHealth :443, stepAssembleInputs :1334, gatherFacts :1763	★当前 CFG_FEATURE_BARO=0 => 整段被裁掉 => 该位恒 0(heightAny 靠 range 满足)
+app_state.h	constexpr	health::flow	0x08 光流有数据且质量达标	写 flowLoop app_sensors.hpp:776,788 / 读 modeRules app_state.cpp:154(VelHold 需要), failsafeConditionsFromHealth :447(仅 VelHold 时算故障)	-
+app_state.h	constexpr	health::range	0x10 测距可用	写 rangeLoop app_sensors.hpp:717,736 / 读 modeRules needHeightAny, failsafeConditionsFromHealth :443, stepAssembleInputs :1334	-
+app_state.h	constexpr	health::gnss	0x20 GNSS 有定位	写 gnssLoop app_sensors.hpp:906,907 / 读 **无产品读者**(modeRules 不含 gnss)	当前 CFG_FEATURE_GNSS=0 => 不启动
+app_state.h	constexpr	health::power	0x40 电压/电流采样可信	写 samplePower app_sensors.hpp:947,953 / 读 **无产品读者**	★只有写者没有读者 => 低压分级保护未接线(欠账)
+app_state.h	constexpr	health::logOk	0x80 日志系统可用(写 flash 或串口)	**无写者** / 读 failsafeConditionsFromHealth app_state.cpp:450	★★恒 0 => fsCondLogFull 恒成立 => fsLevel 正常飞行时恒为 Warn/LogFull(见架构文档 风险 ★)
+app_state.h	constexpr	health::heightAny	baro|range 高度源: 气压计或测距有其一就算有高度	读 failsafeConditionsFromHealth app_state.cpp:443, modeRules app_state.cpp:153,154	组合位, 不单独写
+app_state.h	enum	State	7 态扁平枚举: Boot/InitLow/InitHigh/Standby/Maintenance/Arming/Armed。唯一权威, 不进正交维度	全仓	扁平而非生命周期x动力许可: 旧表里 kLifeNeedsDisarmed 那条就是为拦非法组合而存在
+app_state.h	function	canOutput(State)	Armed 或 Arming => 电机可以出力(唯一判据)	app_task.hpp:76,116,157,175 / app_state.cpp:244,458 / app_flight_stack.hpp:1536 / test:626,633,640	派生, 不另存影子量
+app_state.h	function	isTakeover(State)	s==Armed => 控制已接管(旧代码的 en)	app_flight_stack.hpp:1607,1639,1739,1764,1765,1807	Armed 就是控制接管的定义
+app_state.h	function	isGround(State)	Standby 或 Maintenance => 飞机不可能在飞	app_state.cpp:160(modeStateAllowed),305(ruleArmOrigin),316(taskAdmitted)	-
+app_state.h	function	isStartup(State)	上电三段(Boot/InitLow/InitHigh)	**无调用方**	★定义未使用
+app_state.h	function	stateName(State)	State -> BOOT/INIT_L/INT_H/STBY/MAINT/ARMG/ARM(不上线, 字符串长度无所谓)	test/state_step_test.cpp:100,142,484,572	★产品代码零调用
+app_state.h	enum	Task	状态转移请求的全部词汇。外部请求值号=位号=优先级序; 内部事件不占位、不进共享字	全仓	往中间插一项会同时改位号与优先级(加在末尾也一样)
+app_state.h	function	isForeign(Task)	值号 < foreignCount => 外部请求(占共享字一位)	app_state.cpp:194(postTask 拒绝内部事件) / test:299-302	-
+app_state.h	function	isInternal(Task)	值号 > None => 内部事件(控制环本地量)	app_state.cpp:361(admitTask 直接放行) / test:300-302	-
+app_state.h	function	taskBit(Task)	1u << 值号(共享字掩码, 只有外部请求有)	app_state.cpp:198(postTask) / test:207,218,255,260,263,268,271,274,278,280,282	-
+app_state.h	function	postTask(Task)	链路线程申请: 临界区里置位; EStop 时同时置锁存	app_link_thread.hpp:373 / test:206,211,212,216	InterruptLock; 非外部请求直接 return
+app_state.h	function	takeTasks()	控制环消费: 同一临界区读出并清空整个位图	app_flight_stack.hpp:1079 / test:201,204,207,208,213,218,219,241	InterruptLock; 读出与清除之间丢请求的窗口为零
+app_state.h	function	estopLatched()	读 ESTOP 锁存(守卫)	app_flight_stack.hpp:1080 / app_link_thread.hpp:67(linkGuards) / test 多处	InterruptLock
+app_state.h	function	clearEstop()	清 ESTOP 锁存; **只允许**在一次走通完整前置的 ARM 之后调用	app_flight_stack.hpp:1458	InterruptLock; 唯一的清除路径
+app_state.h	struct	TaskPick	{task, pending}: 这一圈要执行的一位 + 置了几位	app_flight_stack.hpp:1408 / test:251	pending>1 违反设计不变量, 调用方抛异常但仍按值号最小执行
+app_state.h	function	pickTask(uint32_t)	从位图挑出这一圈执行的一位(值号序=优先级序)	app_flight_stack.hpp:1408 / test:251,255,260,263,268,271,274,278,280,282	纯函数
+app_state.h	function	taskName(Task)	Task -> 名字串(不上线)	test/state_step_test.cpp:100,143,485	★产品代码零调用
+app_state.h	enum	Mode	4 档: Manual(只在地面)/Stabilize/AltHold/VelHold。**由控制环写**(链路只发请求)	全仓	命名用 VelHold 而非 PosHold: 光流给的是速度不是位置
+app_state.h	function	isModeTask(Task)	是不是模式选择请求(4 个 Mode* 位)	app_flight_stack.hpp:1346,1431,1447 / app_state.cpp:313,374	-
+app_state.h	function	modeOf(Task)	Mode* Task -> Mode	app_flight_stack.hpp:1347 / app_state.cpp:375	-
+app_state.h	function	modeTask(Mode)	Mode -> Mode* Task	app_link_cmd.hpp:132(SetMode 分支)	一位一档: 位图里没有载荷的位置
+app_state.h	function	isKnownMode(uint8_t)	v <= VelHold => 编号合法(挡越界 arg)	app_link_cmd.hpp:129	防御性第二道
+app_state.h	function	modeName(Mode)	Mode -> 名字串	**无调用方**	★
+app_state.h	struct	ModeRule	模式准入表一行 {mode, needAll, needHeightAny}	app_state.cpp:149(表),394(查表)	-
+app_state.h	function	modeAdmitted(Mode,State,uint8_t)	该模式在当前状态+健康位下能不能用	app_state.cpp:417,422,425 / test:501-507	纯函数
+app_state.h	function	modeSwitchAllowed(Mode,Mode,State,uint8_t,bool)	切换许可: 自动路径只许降档(to<=from), 升级必须显式	app_state.cpp:375 / test:510-513	纯函数; 防抖动的光流把飞机送回高档
+app_state.h	function	degradeMode(Mode,State,uint8_t)	自动降级链 VelHold->AltHold->Stabilize, 只降不升	app_flight_stack.hpp:1473 / test:516-521	IMU 丢了是失控保护不是降级
+app_state.h	enum	Operation	None/Takeoff/Land: 会自己结束的那类请求。**线上 DL_STATE.task 装的就是它**	全仓	hoverLand 不在其中(与它正交)
+app_state.h	function	operationName(Operation)	Operation -> 名字串	**无调用方**	★
+app_state.h	function	isOperationTask(Task)	Takeoff/Land/Cancel => 原地类(不移动 State, 只换 Operation)	app_flight_stack.hpp:1447 / app_state.cpp:318	单独一个谓词: 哪些请求是原地类与迁移表是同一份知识
+app_state.h	enum	FailsafeLevel	None/Warn/Degrade/HoverLand/Cut, 数值越大越严重, 判定取最严重的那条	全仓	不是状态, 而是每圈由健康位推导的结论
+app_state.h	enum	FailsafeReason	9 个原因码(4 bit 上报): 一个码对应该去查什么	全仓	-
+app_state.h	enumerator	fsCondLinkLost/ImuLost/HeightLost/FlowLost/PowerWarn/PowerLow/PowerCut/LogFull	失效保护条件位(8 个), 由调用方按当前事实拼出来	app_state.cpp:438-451(反推),175-184(表) / test:531	fsCondLogFull 因 logOk 恒 0 而恒置位
+app_state.h	struct	FailsafeRule	失效保护表一行 {cond, disarmedLevel, armedLevel, reason}	app_state.cpp:175,460	表顺序即优先级
+app_state.h	function	failsafeConditionsFromHealth(uint8_t,Mode)	由健康位反推条件位(把能力翻译成故障)	app_flight_stack.hpp:1387 / test:524-526	★logOk 位无写者 => fsCondLogFull 恒置位
+app_state.h	function	evaluateFailsafe(uint8_t,State,FailsafeLevel&,FailsafeReason&)	按条件位求等级与原因, 表顺序即优先级, 先匹配先赢	app_flight_stack.hpp:1387 / test:316,319,330,341,366,531	纯函数
+app_state.h	function	failsafeLevelName(FailsafeLevel)	-> 名字串	**无调用方**	★
+app_state.h	function	failsafeReasonName(FailsafeReason)	-> 名字串	**无调用方**	★
+app_state.h	enum	GroundStatus	12 个命令结果码(线上 DL_ACK.result, 数值即协议)	全仓	6-11 让地面端分清我不认识与认识但现在不能执行
+app_state.h	function	groundStatusName(GroundStatus)	-> 名字串	**无调用方**	★
+app_state.h	enum	CommandOp	21 个业务命令词汇, 数值=线上编号。**DL_LIB 里没有这个枚举**	app_link_cmd.hpp 全部函数 / app_link_thread.hpp:343,376 / test 多处	线上<->内部是显式映射表(app_link_cmd.hpp), 不是 static_cast
+app_state.h	enumerator	effectNone / effectStartPower / effectTakeover / effectStopPower / effectPurgeDirect	迁移的效果位(边沿执行一次, 由控制环这唯一执行点跑)	app_state.cpp 表:85-108 / app_flight_stack.hpp:304,310,319,333,340,1349	每拍判一次 -> 迁移那一拍执行一次(方案 D15)
+app_state.h	struct	Guards	状态机输入: 15 个字段全是可从外部算出来的事实, 所以整条状态机是纯函数	app_flight_stack.hpp:281-298(makeGuards),367,1386 / app_link_thread.hpp:59-71(linkGuards) / test 大量	纯数据不含判断; 阈值与判据在 app_guards.hpp
+app_state.h	struct	Step	一步的结果 {next, effects, stateChanged, matched}	app_flight_stack.hpp:368,1450 / app_state.cpp:287	matched==false => 非法迁移, 调用方抛异常
+app_state.h	function	internalEvent(State,const Guards&)	控制环每圈推导的内部事件(上电三段/StartDone/Cut)	app_flight_stack.hpp:1420 / test:168-190,338	Cut 优先级高于一切(含刚取到的外部请求)
+app_state.h	function	cutDemanded(State,const Guards&)	要不要立即断动力(等级见底 或 Arming 期间链路丢失)	app_state.cpp:255,268 / test:183-187	判据是 canOutput(from): 地面每圈报非法迁移是返 Cut 的代价
+app_state.h	enum	FailsafeAction	None/HoverLand/Cut: 失效保护这一圈要做什么(分层后的唯一判定点)	app_state.cpp:253 / app_flight_stack.hpp:1399	不让调用方自己拼 cutDemanded+hoverLandDemanded
+app_state.h	function	failsafeAction(State,const Guards&)	分层判定: Arming 期间丢链路判 Cut 而不是 HoverLand	app_flight_stack.hpp:1399 / test:325,326,337,347,351,362,363,371	真相只在一处
+app_state.h	function	stepState(State,Task,const Guards&)	状态机**唯一**执行点(纯函数, 查迁移表)	app_flight_stack.hpp:368,1450 / test:98,140,153,383-396	没命中原样返回, 不猜默认值
+app_state.h	function	taskAdmitted(State,Task)	状态级准入: 迁移表/原地表里有没有它	app_state.cpp:353 / test:483,487	-
+app_state.h	function	checkArmPreconditions(const Guards&)	解锁量化前置: bootReady -> IMU -> 链路稳 -> 油门低位 -> 杆量中位	app_state.cpp:369	顺序刻意是从不可操作到可操作
+app_state.h	function	admitTask(State,Task,const Guards&)	准入汇总: 状态级 + 量化前置。**链路层与控制环读同一份**	app_flight_stack.hpp:1433 / app_link_thread.hpp:369 / test 大量	DL_ACK 不谎报已经在飞了的落地方式
+app_state.h	enum	LinkState	Down/Syncing/Steady 三档(派生, 无存储)	app_state.h:582	已有两个真相源(health::link + uplinkStreak), 再放一个可变变量就是第三份
+app_state.h	function	linkStateOf(uint8_t,uint16_t)	由健康位+连续帧数派生链路状态	test/state_step_test.cpp:543-547,813	★产品代码零调用
+app_state.h	function	linkStateName(LinkState)	-> 名字串	**无调用方**	★
+app_state.h	struct	Snapshot	{state,mode,operation,fsLevel,fsReason,health}: 控制环发布、链路/日志读的一致快照	app_flight_stack.hpp:1832(发布) / app_link_thread.hpp:59,163,168,172,364(读) / test:568,580,587,602,610	取一份=一个临界区; 避免新状态+旧模式的撕裂组合
+app_state.h	function	publishSnapshot(const Snapshot&)	控制环每圈发布(InterruptLock 整份赋值)	app_flight_stack.hpp:1839 / test:608	非 volatile 是刻意的: 一致性由临界区保证
+app_state.h	function	snapshot()	任何线程取一份一致快照(InterruptLock)	app_link_thread.hpp:163,172,364 / test:610	★app_flight_stack.hpp:1830 那处只是注释
+app_state.h	struct	WireState	{lifecycle, arming, task}: 内部状态 -> 旧位域(遥控器零改动的证据)	app_link_thread.hpp:174 / test:570	disarming(3)/Fault(6)/Shutdown(7) 永不发出
+app_state.h	function	deriveWire(const Snapshot&)	由 Snapshot 推导空口位域	app_link_thread.hpp:174 / test:570,582-593	语义变化点: Standby 一律发 3(STBY) 是与遥控器约定的同步点
+app_state.cpp	global	taskWord	volatile uint32_t 请求位图(匿名命名空间)。唯一写者=链路线程, 唯一读-清者=控制环	写 postTask():198 / 读清 takeTasks():207	InterruptLock; volatile 是因为被两个线程反复观察
+app_state.cpp	global	estopLatch	volatile bool ESTOP 锁存, 与位分开: 位是这一拍的动作, 锁存是守卫	置 postTask():200 / 清 clearEstop():221 / 读 estopLatched():215	InterruptLock
+app_state.cpp	global	published	Snapshot 快照存储(非 volatile, 一致性由临界区保证)	写 publishSnapshot():230 / 读 snapshot():236	InterruptLock; volatile 结构体会退化成逐字节序列
+app_state.cpp	enumerator	ruleArmOrigin / ruleIfMaintenance / ruleIfFlight	迁移表行的附加标志位	ruleFlagsOk():112, findRule():130, stepState():305	armOrigin 实现扁平模型的返回地址
+app_state.cpp	struct	StateRule	迁移表一行 {from, on, to, effects, flags}	stateRules[]:84 / findRule():125	-
+app_state.cpp	constexpr	stateRules[]	状态迁移表(24 行) —— 数据不是 if-else, 加状态时必须有行、行数可数	findRule():126 / taskAdmitted():322	★唯一权威迁移表; Disarm/EStop 在每个状态都有行
+app_state.cpp	constexpr	stateRuleCount	迁移表行数	findRule():125 / taskAdmitted():321	-
+app_state.cpp	function	ruleFlagsOk(uint8_t,const Guards&)	检查 ruleIfMaintenance / ruleIfFlight 条件(匿名命名空间)	findRule():130	-
+app_state.cpp	function	findRule(State,Task,const Guards&)	按 (from,on) + flags 线性查表, 返回行指针或 nullptr(匿名命名空间)	stepState():299	nullptr => matched=false => 合法迁移必须能被发现
+app_state.cpp	constexpr	modeRules[]	模式准入表 4 行 {mode, needAll, needHeightAny}	modeAdmitted():393	Manual 的只能未解锁时用由切换时机保证, 不靠表
+app_state.cpp	constexpr	modeRuleCount	模式准入表行数	modeAdmitted():393	-
+app_state.cpp	function	modeStateAllowed(Mode,State)	状态维度: 维护态只允许 Manual; 上电三段一律不允许(匿名命名空间)	modeAdmitted():390	-
+app_state.cpp	constexpr	failsafeRules[]	失效保护规则表 8 行, **顺序即优先级**	evaluateFailsafe():459	按多快会摔排: 断动力 > 降落 > 降级 > 告警
+app_state.cpp	constexpr	failsafeRuleCount	规则表行数	evaluateFailsafe():459	-
+app_task.hpp	include	<math.h> / <stdint.h> / app_state.h / flight_config.hpp	用 isfinite/fabsf; Operation-Mode-FailsafeLevel-GroundStatus 词汇; cfg::control::* 与 cfg::link::failsafe::* 阈值	-	本文件是纯策略, 不碰硬件
+app_task.hpp	constexpr	heightSanityMinM	-0.5m: 高度读数可信下界。低于它只可能是估计器坏了(飞机不可能在地下 0.5m)	heightUsable() app_task.hpp:99	规则 3 的一部分
+app_task.hpp	constexpr	takeoffReachM	0.15m: 起飞到位判据的高度容差	app_task.hpp:196(到位判据),260(已在起飞高度之上)	-
+app_task.hpp	constexpr	takeoffVzMps	0.15m/s: 起飞到位判据的垂速容差(两个都要满足, 只看高度会把冲过头判成到位)	app_task.hpp:197	-
+app_task.hpp	constexpr	takeoffStageSpinUp / takeoffStageClimb / takeoffStageDelivered	起飞子阶段 0=起转 / 1=爬升 / 2=已交付	stepOperation():172,183,193,199	★与 landStage* 数值语义冲突是刻意的
+app_task.hpp	constexpr	landStageDescend / landStageTouchdown	降落子阶段 0=下降 / 1=已触地	stepOperation():137,145,154,162	★同数值跨操作含义不同: Takeoff 的 1=爬升, Land 的 1=已触地
+app_task.hpp	enum	AltitudeUse	None/Hold/Idle: 本圈高度环的用法	app_flight_stack.hpp:272,1540,1557,1669,1699,1707 / test:630,637,649,657,668	Idle 是已触地: 姿态环 + 最低油门, 等人上锁
+app_task.hpp	struct	OperationIn	{operation, stage, altTargetM} 状态机输入	app_flight_stack.hpp:1527 / test:618	纯数据
+app_task.hpp	struct	OperationCtx	{dt, heightM, vzMps, canOutput, hoverLand}	app_flight_stack.hpp:1532 / test:622	hoverLand 与 operation 正交(它答为什么, operation 答做什么)
+app_task.hpp	struct	OperationOut	{operation, stage, altTargetM, altitude, heightUsable}	app_flight_stack.hpp:1539 / test:627	-
+app_task.hpp	function	heightUsable(float)	读数可信? isfinite && >=-0.5 && <=kAltMaxM	app_task.hpp:112,150,153,196,259 / test:666	坏读数时软地板与触地判据全部失效
+app_task.hpp	function	stepOperation(const OperationIn&,const OperationCtx&)	操作/失效保护状态机一步(**纯函数**)	app_flight_stack.hpp:1539 / test:627,634,646,655,665	不读硬件、不写共享区
+app_task.hpp	function	hoverLandDemanded(FailsafeLevel,FailsafeReason,bool)	失效保护等级要不要变成现在就开始缓降这个动作	app_state.cpp:260(failsafeAction) / test:329,332,348,350,354,357,368	等级与动作分开判: 链路原因要持续 hoverLandMs, 电压低之类立刻动作
+app_task.hpp	function	checkTaskPreconditions(Operation,Mode,float,FailsafeLevel)	任务请求的前置(准入表管不到的那部分); 链路层与控制环调同一个	app_state.cpp:382 / test	两处各写一份必然漂, 这是 DL_ACK 必须由算得出真相的那一层回答的落地
+app_guards.hpp	include	<stdint.h> / app_state.h / flight_config.hpp / link/dlx_link_frame.hpp	Guards 类型; 解锁前置阈值; upCtrl::kThrMax 与 kStickMax	-	阈值的唯一来源
+app_guards.hpp	struct	ArmStickLimits	{thrLow, stickCenter}: 两个杆量阈值(counts)	app_guards.hpp:35,50 / test:790	阈值只算一次、只写一处
+app_guards.hpp	function	armStickLimits()	由 cfg 百分比 x 满量程算成 counts 阈值	applyStickFacts():50	纯函数
+app_guards.hpp	function	applyStickFacts(Guards&,uint16_t,int16_t,int16_t)	填 Guards 的油门低位 + 杆量中位	app_flight_stack.hpp:297(makeGuards) / app_link_thread.hpp:70(linkGuards) / test:796-805	用 counts 判定: 中间少一次乘除就少一次舍入争议
+app_guards.hpp	function	linkIsSteady(uint8_t,uint16_t)	链路稳的唯一判据 = 健康位立着 且 连续采信>=8	app_flight_stack.hpp:296 / app_link_thread.hpp:68 / test:809-812	只看其一都会误判(失同步刚恢复 / 已静默但计数没归零)

@@ -16,13 +16,18 @@
  * Please modify RT_HEAP_SIZE if you enable RT_USING_HEAP
  * the RT_HEAP_SIZE max value = (sram size - ZI size), 1024 means 1024 bytes
  *
- * 发布版(release.cpp)的线程栈全部从这里分配, 预算:
+ * 发布版的线程栈全部从这里分配。**实测**(2026-10-03 首次烧录的自检日志):
  *   main 线程栈 RT_MAIN_THREAD_STACK_SIZE = 24KB(控制环 + EKF 的大矩阵临时量)
- *   nrf_tel 线程 3KB + logger 线程 3KB + 信号量/定时器对象 ~1KB
- *   合计 ~31KB -> 留出余量取 40KB(片内 128KB RAM, 当前整体占用约 84KB)
+ *   建线程后 已用=35000 峰值=35000 空闲=5880 / 总=40880 字节
+ *   (当时的线程: logger 3KB + link_tel 3KB + 采集 1KB)
+ *
+ * 40KB 只剩 5.8KB(14%)—— 而 2026-10-03 的台架配置里 **GNSS 与气压计是编译期关掉的**:
+ * 把它们打开还要再加两个采集线程(~2.2KB) ⇒ 余量会掉到 3.6KB。余量这么薄的风险不是"跑不动",
+ * 而是**某个线程创建失败** —— 表现是"某个传感器永远没数据", 而根因在堆上。
+ * 所以提到 48KB: 片内 128KB RAM, 抬高后仍然由链接器把关(装不下会报 L6220E, 不是悄悄变砖)。
  * 注意: 若把 RT_MAIN_THREAD_STACK_SIZE 调大, 这里也要同步调大, 否则线程创建会失败。
  */
-#define RT_HEAP_SIZE (40*1024)
+#define RT_HEAP_SIZE (48*1024)
 static rt_uint8_t rt_heap[RT_HEAP_SIZE];
 
 RT_WEAK void *rt_heap_begin_get(void)

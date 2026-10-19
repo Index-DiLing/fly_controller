@@ -261,8 +261,8 @@ namespace dlx
         uint32_t sessionId; ///< 会话号(每次上电 +1), 用于把条目归到某一次上电
         uint32_t seq;       ///< 会话内条目序号, 从 1 开始
         // ------------------------- 业务数据(发布版 flight log) -------------------------
-        // 这 132 字节就是"一条飞行日志": 姿态/角速度/比力/设定值/输出/高度/状态位。
-        // 状态位与事件位的具体含义见 flight_config_struct.hpp 的 kLogFlag*/kLogEvent*。
+        // 这 160 字节就是"一条飞行日志": 姿态/角速度/比力/设定值/输出/高度/状态位 (+v2 的水平观测)。
+        // 状态位与事件位的具体含义见 release_header.h 的 kLogFlag*/kLogEvent*。
         // 注意: 改字段(顺序/类型/个数)会让尺寸变化, 旧数据判为几何不匹配, 需要 format() 一次。
         uint32_t tickMs;          ///< 上电以来的毫秒计数
         uint16_t flags;           ///< 状态位(电平型): 链路/传感器/使能/日志状态…
@@ -284,6 +284,20 @@ namespace dlx
         float    baroRelM;        ///< 气压高度(相对起飞点)[m]
         float    baroAbsM;        ///< 气压高度(绝对, 未减基准)[m]
         float    gyroBias[3];     ///< EKF 估计的陀螺零偏 [rad/s](每 N 条才更新一次)
+        // ------------------------- v2 追加(2026-10-02): 水平速度 / 光流 / 测距 -------------------------
+        // 为什么必须加: 速度环(VEL_HOLD)的唯一水平观测量是光流, 而 EKF 的水平位置**没有任何量测**
+        //   (只靠积分漂)。事后要分清"是光流尺度算错、还是门限把观测拒了、还是根本没收到光流",
+        //   只有把**原始增量 + 融合结果 + 有效性标志**记在同一条日志里才可能。
+        // 这 28 字节把业务区从 132 顶到 160 ⇒ sizeof 144→172, 步长 148→176, 每槽 885→744 条。
+        // ⚠️ 改这一段必须同步 cfg::log::kLayoutVersion(现在是 2), 否则上位机会按旧偏移解析成垃圾。
+        float    velXyMps[2];     ///< EKF 世界系水平速度 [m/s](x=东, y=北)
+        float    posXyM[2];       ///< EKF 世界系水平位置 [m](无水平量测, 必然漂移; 记它是为了量漂移速率)
+        float    rangeM;          ///< 测距高度 [m](VL53L1X; 本帧无效时保持 0)
+        uint16_t flowDtMs;        ///< 本帧光流增量对应的积分间隔 [ms](事后用 delta/间隔 复算速度)
+        int16_t  flowDx;          ///< 光流原始增量 x [count](**未乘尺度**, 尺度错了要能看出来)
+        int16_t  flowDy;          ///< 光流原始增量 y [count]
+        uint8_t  flowSqual;       ///< 光流表面质量(PMW3901 SQUAL 0~255; 越小越不可信)
+        uint8_t  flowFlags;       ///< kFlowFlag* 位(光流/测距/GNSS 速度是否有效)
         uint16_t motor[4];        ///< 四路 DShot 输出(物理通道顺序)
     };
     static_assert(offsetof(LogEntry, crc) == 2, "crc 字段必须紧跟 type/reserved");

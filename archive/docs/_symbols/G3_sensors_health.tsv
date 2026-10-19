@@ -1,0 +1,119 @@
+app_sensors.hpp	include	stm32f4xx.h	CMSIS 寄存器类型; 供 GPIO/SPI/I2C/USART/ADC/EXTI 底层	被 Sensors::adc:183、rangeInt:162 间接引用	-
+app_sensors.hpp	include	rtthread.h	rt_thread/rt_sem/rt_tick API	被 startThreads():597、onRangeIrq():567 引用	-
+app_sensors.hpp	include	dlx_gpio.hpp	GPIO 类; XSHUT 引脚	被 rangeXshut:159 引用	-
+app_sensors.hpp	include	dlx_iic.hpp	IICBus/IICDevice; 两路 I2C 总线	被 baroBus:154、rangeBus:160 引用	baroBus 仅 CFG_FEATURE_BARO=1
+app_sensors.hpp	include	dlx_spi.hpp	SPI 无片选工厂(SPI3)	被 flowSpi:172 引用	-
+app_sensors.hpp	include	dlx_usart.hpp	USART + USARTDmaReceiver(循环 DMA + IDLE 切帧)	被 gnssRx:178 引用	-
+app_sensors.hpp	include	dlx_exti.hpp	EXTILine/EXTITrigger; PA3 数据就绪中断	被 rangeInt:162 引用	-
+app_sensors.hpp	include	dlx_adc.hpp	ADC1Sampler/ADC1Config	被 adc:183 引用	-
+app_sensors.hpp	include	dlx_delay.hpp	delay_ms 忙等(上电 XSHUT 时序)	被 bringUpRange():273 引用	-
+app_sensors.hpp	include	dlx_latest.hpp	Latest<T> seqlock 无锁快照	被 baroSnap:188 等五路快照引用	-
+app_sensors.hpp	include	BMP388/dlx_bmp388.hpp	BMP388 驱动(气压/温度/高度)	被 baro:155 引用	仅 CFG_FEATURE_BARO=1
+app_sensors.hpp	include	VL53L1X/dlx_vl53l1x.hpp	VL53L1X 驱动 + RangeRead 三态 + ULD 表	被 range:161、rangeLoop():715 引用	-
+app_sensors.hpp	include	PMW3901/dlx_pmw3901.hpp	PMW3901 驱动 + 回读校验表	被 flow:173、bringUpFlow():459 引用	-
+app_sensors.hpp	include	GNSS/dlx_gnss_nmea.hpp	GnssNmeaParser + GnssSolution	被 gnss:179、gnssLoop():903 引用	-
+app_sensors.hpp	include	release_header.h	ExceptionCode/FunctionResult/cfg 配置常量	被 bringUpBaro():243、bringUpPower():529 引用	-
+app_sensors.hpp	include	app_exception_handler.h	DLX_HANDLE_EXCEPTION 运行期故障唯一出口	被 baroLoop():682、rangeLoop():737 等引用	-
+app_sensors.hpp	include	app_health.hpp	healthSet/healthClear: 实时能力位	被 baroLoop():674、samplePower():947 引用	-
+app_sensors.hpp	include	app_boot_report.hpp	logSpiStatus/apb1ClockHz	被 bringUpFlow():412 引用	-
+app_sensors.hpp	include	app_stack.hpp	paintStackWatermark(): 0xA5 栈水位线	被 paintThreadWatermark():960 引用	-
+app_sensors.hpp	include	hardware_claims.hpp	claims::kAdcVoltagePin/kAdcCurrentPin: 接线事实唯一来源	被 bringUpPower():540 引用	-
+app_sensors.hpp	namespace	dlx	采集层命名空间; 五路快照 + Sensors 全部在此	app_flight_stack.hpp:33 include	-
+app_sensors.hpp	struct	BaroSample	气压快照(BMP388): 只在读成功时发布, 无有效位	baroSnap.publish():680 -> stepBaroObs() app_flight_stack.hpp:1207	仅 CFG_FEATURE_BARO=1 时被产出
+app_sensors.hpp	member	BaroSample::pressurePa	原始气压[Pa]	baroLoop():676 -> 无读者	-
+app_sensors.hpp	member	BaroSample::temperatureC	原始温度[C]	baroLoop():677 -> 无读者	-
+app_sensors.hpp	member	BaroSample::altitudeM	绝对气压高度(101325Pa 基准); 唯一被控制环消费的字段	baroLoop():678 -> stepBaroObs() app_flight_stack.hpp:1217	-
+app_sensors.hpp	member	BaroSample::tickMs	采样时刻; 诊断用	baroLoop():679 -> 无读者	-
+app_sensors.hpp	struct	RangeSample	测距快照(VL53L1X); 只在 NewData 时发布	rangeSnap.publish():726 -> stepRangeObs() app_flight_stack.hpp:1235	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	member	RangeSample::rangeM	已零偏/串扰修正的距离[m]; 控制环据此喂 EKF	rangeLoop():720 -> stepRangeObs() app_flight_stack.hpp:1243,1249	-
+app_sensors.hpp	member	RangeSample::status	器件原始量程状态(低 5 位)	rangeLoop():721 -> 无读者	-
+app_sensors.hpp	member	RangeSample::rawMm	器件原始 mm(未修正); 排查尺度用	rangeLoop():722 -> 无读者	-
+app_sensors.hpp	member	RangeSample::peakSignal	峰值回波率(太低 = 地暗/太远)	rangeLoop():723 -> 无读者	-
+app_sensors.hpp	member	RangeSample::ambient	环境光计数率(太高 = 阳光)	rangeLoop():724 -> 无读者	-
+app_sensors.hpp	member	RangeSample::tickMs	采样时刻	rangeLoop():725 -> 无读者	-
+app_sensors.hpp	struct	FlowSample	光流快照(PMW3901 原始 counts); 换算在控制环做	flowSnap.publish():785 -> stepFlowObs() app_flight_stack.hpp:1262	仅 CFG_FEATURE_FLOW=1
+app_sensors.hpp	member	FlowSample::dx	X counts(已施 kSignX); 与控制环同刻高度/陀螺一起用	flowLoop():779 -> stepFlowObs() app_flight_stack.hpp:1272, stepLog():1928	-
+app_sensors.hpp	member	FlowSample::dy	Y counts(已施 kSignY)	flowLoop():780 -> stepFlowObs() app_flight_stack.hpp:1272, stepLog():1929	-
+app_sensors.hpp	member	FlowSample::squal	器件质量因子; 决定这一帧能否用	flowLoop():781 -> stepFlowObs() app_flight_stack.hpp:1273, stepLog():1930	-
+app_sensors.hpp	member	FlowSample::dtMs	与上次读成功的间隔[ms]; 换算速度用	flowLoop():782 -> stepFlowObs() app_flight_stack.hpp:1273	-
+app_sensors.hpp	member	FlowSample::tickMs	采样时刻; 供光流估计器时间戳	flowLoop():783 -> stepFlowObs() app_flight_stack.hpp:1274	-
+app_sensors.hpp	struct	GnssSample	NMEA 定位快照; 保留了帧内字段级有效位	gnssSnap.publish():925 -> stepGnssObs() app_flight_stack.hpp:1288	仅 CFG_FEATURE_GNSS=1
+app_sensors.hpp	member	GnssSample::latE7 / lonE7	纬度/经度 x 1e7	gnssLoop():911,912 -> stepGnssObs() app_flight_stack.hpp:1322	-
+app_sensors.hpp	member	GnssSample::altMslMm	海拔 MSL[mm]; 只进门限 + ENU 记日志	gnssLoop():913 -> stepGnssObs() app_flight_stack.hpp:1323	-
+app_sensors.hpp	member	GnssSample::gspeedCms	地速[cm/s]; 经 trackSpeedToEnu 才能进 EKF	gnssLoop():914 -> stepGnssObs() app_flight_stack.hpp:1310	-
+app_sensors.hpp	member	GnssSample::courseCdeg	真航向[0.01 度]	gnssLoop():915 -> stepGnssObs() app_flight_stack.hpp:1309	-
+app_sensors.hpp	member	GnssSample::sats / fix / hdopX10 / posValid / altValid / courseValid / tickMs	卫星数/fix 类型/HDOP x10/位置/海拔/航向有效位/采样时刻	gnssLoop():916-923 -> 控制环均未读	★控制环只读 speedValid 与 lat/lon/alt/gspeed/course
+app_sensors.hpp	member	GnssSample::speedValid	同帧速度是否有效; 决定是否喂水平速度	gnssLoop():921 -> stepGnssObs() app_flight_stack.hpp:1307	-
+app_sensors.hpp	member	GnssSample::solSeq	解析器每接受一句 +1; 仅 gnssLoop 自己用来门控发布	gnssLoop():924 -> gnssLoop():904 自用	控制环用 gnssSnap.written() 而非此字段
+app_sensors.hpp	struct	PowerSample	电压/电流快照(ADC1)	powerSnap.publish():952 -> stepPublish() app_flight_stack.hpp:1820	仅 CFG_FEATURE_ADC=1
+app_sensors.hpp	member	PowerSample::packV / amps	电池组电压(已乘 9:1 分压) / 电流(已减零点 x 灵敏度)	samplePower():949,950 -> stepPublish() app_flight_stack.hpp:1823,1824	-
+app_sensors.hpp	member	PowerSample::tickMs	采样时刻	samplePower():951 -> 无读者	-
+app_sensors.hpp	member	PowerSample::valid	恒 false: samplePower 从不清零也不置位, 成功即发布	无写者 -> 无读者	★死字段(v2.1 取消有效位后的残留)
+app_sensors.hpp	struct	Sensors	五路慢速传感器的对象+线程+快照聚合; 构造不碰寄存器	app_flight_stack.hpp:96 成员 sensors	-
+app_sensors.hpp	struct	Sensors::UpFlags	上电一次性结论(具名 bool, 一字段一写者, 免位图读改写)	读 app_flight_stack.hpp:313,430,1037	与运行期 app::health::* 刻意分开
+app_sensors.hpp	member	Sensors::UpFlags::baro	BMP388 init 成功(上电期 main 写)	bringUpBaro():247 -> baroLoop():665, applyEffects() app_flight_stack.hpp:313, bringUpMotors():430, sampleBaroReference():1037	仅 CFG_FEATURE_BARO=1 时可能为真
+app_sensors.hpp	member	Sensors::UpFlags::range	VL53L1X init 成功; EXTI 订阅失败不回改它	bringUpRange():282 -> rangeLoop():707	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	member	Sensors::UpFlags::flow	PMW3901 init 成功; 热插拔自愈时被运行期光流线程改写	bringUpFlow():404, probeFlow():833 -> flowLoop():762	★唯一可被运行期线程置位的 up 位
+app_sensors.hpp	member	Sensors::UpFlags::gnss	USART2+循环 DMA 起来了	bringUpGnss():508 -> 无读者	★只写不读(仅上电报告语义); 当前 GNSS=0
+app_sensors.hpp	member	Sensors::UpFlags::power	ADC1 起来了	bringUpPower():541 -> samplePower():941	仅 CFG_FEATURE_ADC=1
+app_sensors.hpp	member	Sensors::up	UpFlags 实例(上电结论, 供控制环/自检读)	bringUp* 写 -> app_flight_stack.hpp:313,430,1037 读	-
+app_sensors.hpp	member	Sensors::baroBus	IIC1(PB6/PB7) 总线对象	bringUpBaro():244 init -> baro 驱动持有	仅 CFG_FEATURE_BARO=1
+app_sensors.hpp	member	Sensors::baro	BMP388 对象(地址 kAddr)	bringUpBaro():246,250,678 -> baroLoop():673, sampleBaroReference() app_flight_stack.hpp:1044,1045	仅 CFG_FEATURE_BARO=1
+app_sensors.hpp	member	Sensors::rangeXshut	XSHUT 引脚(PD2); 上电期必须先低再拉高	bringUpRange():271-275 -> 无读者(仅上电时序)	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	member	Sensors::rangeBus	IIC2(PF1/PF0) 总线对象	bringUpRange():274 init, :334 ULD 回读 -> range 驱动持有	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	member	Sensors::range	VL53L1X 对象	bringUpRange():278 init -> rangeLoop():715,722	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	member	Sensors::rangeInt	PA3/EXTI3 数据就绪线; 触发沿跟随配置极性	bringUpRange():289 init(注册 onRangeIrq) -> EXTI3 ISR 回调	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	member	Sensors::flowSpi	SPI3(PC10/11/12) 无片选对象(CS 由驱动翻转)	bringUpFlow():402 init -> flow 驱动持有	仅 CFG_FEATURE_FLOW=1
+app_sensors.hpp	member	Sensors::flow	PMW3901 对象	bringUpFlow():403, probeFlow():818 -> flowLoop():775	仅 CFG_FEATURE_FLOW=1
+app_sensors.hpp	member	Sensors::gnssUsart	USART2(TX=PD5/RX=PD6) 对象	bringUpGnss():505 -> gnssRx	仅 CFG_FEATURE_GNSS=1
+app_sensors.hpp	member	Sensors::gnssDmaBuf	512B 循环 DMA 接收缓冲	USART2 DMA 硬件写 -> gnssLoop():890 逐字节读	仅 CFG_FEATURE_GNSS=1
+app_sensors.hpp	member	Sensors::gnssRx	循环 DMA + IDLE 切帧接收器(容量/写指针/溢出计数)	bringUpGnss():505 start -> gnssLoop():878,883,896	仅 CFG_FEATURE_GNSS=1
+app_sensors.hpp	member	Sensors::gnss	NMEA 解析器(语句掩码来自 cfg)	gnssLoop():890 feed -> gnssLoop():903, stepGnssObs() app_flight_stack.hpp:1300	仅 CFG_FEATURE_GNSS=1
+app_sensors.hpp	member	Sensors::gnssReadPos	本线程已搬走的字节数(跨回绕)	bringUpGnss():509 清零, gnssLoop():892 -> gnssLoop():886-892	仅 CFG_FEATURE_GNSS=1
+app_sensors.hpp	member	Sensors::adc	ADC1 采样器(PA0 电压 9:1 / PA1 电流)	bringUpPower():539 setConfig, :540 init -> samplePower():946	仅 CFG_FEATURE_ADC=1
+app_sensors.hpp	member	Sensors::baroSnap	气压快照信箱(seqlock, 单写者)	baroLoop():680 publish -> stepBaroObs() app_flight_stack.hpp:1208-1212 read	当前 BARO=0 时永不发布
+app_sensors.hpp	member	Sensors::rangeSnap	测距快照信箱	rangeLoop():726 publish -> stepRangeObs() app_flight_stack.hpp:1236-1240	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	member	Sensors::flowSnap	光流快照信箱	flowLoop():785 publish -> stepFlowObs() app_flight_stack.hpp:1264-1268	仅 CFG_FEATURE_FLOW=1
+app_sensors.hpp	member	Sensors::gnssSnap	GNSS 快照信箱	gnssLoop():925 publish -> stepGnssObs() app_flight_stack.hpp:1291-1295	仅 CFG_FEATURE_GNSS=1
+app_sensors.hpp	member	Sensors::powerSnap	电源快照信箱(生产者不单独占线程)	samplePower():952 publish -> stepPublish() app_flight_stack.hpp:1822 read	仅 CFG_FEATURE_ADC=1
+app_sensors.hpp	member	Sensors::rangeSem	EXTI 唤醒信号量(RT_IPC_FLAG_PRIO, 初值 0)	startThreads():596 create, onRangeIrq():567 release -> rangeLoop():706 take	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	member	Sensors::tidBaro / tidRange / tidFlow / tidGnss	sns_baro / sns_rng / sns_flow / sns_gnss 线程句柄	startThreads():597-613 -> startedThreads():623-626	按 CFG_FEATURE_* 条件创建
+app_sensors.hpp	constexpr	Sensors::kFlowProbePeriodMs	探测限流周期 1000ms	probeFlow():811,853	仅 CFG_FEATURE_FLOW=1
+app_sensors.hpp	member	Sensors::lastFlowProbeMs	上次探测时刻; 只有光流线程写	probeFlow():814 写 -> :811 读	仅 CFG_FEATURE_FLOW=1
+app_sensors.hpp	member	Sensors::flowProbes	探测轮数计数器	probeFlow():815 写 -> :824,838,855 读	==1 时抛一次 FLOW_NOT_FOUND
+app_sensors.hpp	method	Sensors::bringUpBaro()	上电: I2C1 400k init + BMP388 init; 写 up.baro; 失败 rec.throws; 编译期关闭时不碰总线且不抛异常	bringUpSensors() app_flight_stack.hpp:413	仅 CFG_FEATURE_BARO=1 有实体
+app_sensors.hpp	method	Sensors::bringUpRange()	上电硬时序: XSHUT 低 -> 延时 -> 总线 init -> 拉高 -> 延时 -> 器件 init -> 注册 EXTI(P2_S2); 写 up.range; EXTI 失败抛 RANGE_INT_REGISTER_FAILED 但不回改 up.range; ULD 失败时回读 91B 表做二分诊断	bringUpSensors() app_flight_stack.hpp:414	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	static-func	Sensors::rangeErrorHint()	把测距失败的 ExceptionCode 翻成"下一步查什么"; 纯查表无副作用	bringUpRange():318	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	method	Sensors::bringUpFlow()	上电: SPI3 init + PMW3901 init; 写 up.flow; 失败 rec.throws; verifyBadCount>0 时非严格放行但仍抛 FLOW_VERIFY_FAILED	bringUpSensors() app_flight_stack.hpp:415	仅 CFG_FEATURE_FLOW=1
+app_sensors.hpp	method	Sensors::bringUpGnss()	上电: gnssRx.start(8N1, 配置波特, P1_S1) 起循环 DMA + IDLE; 置 up.gnss=true, gnssReadPos=0; 不抛异常	bringUpSensors() app_flight_stack.hpp:416	仅 CFG_FEATURE_GNSS=1
+app_sensors.hpp	method	Sensors::bringUpPower()	上电: 填 ADC1Config(分压/零点/灵敏度/节数)+init(claims 引脚); 写 up.power; 编译期关闭 ADC 时仍抛 POWER_ADC_FAILED(bringUpRec 要挡住解锁)	bringUpSensors() app_flight_stack.hpp:417	#else 分支也抛异常
+app_sensors.hpp	static-func	Sensors::onRangeIrq()	EXTI3 ISR 回调: 只 rt_sem_release(rangeSem), 不做任何 I2C	bringUpRange():289 注册到 EXTILine	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	static-func	Sensors::baroEntry() / rangeEntry() / flowEntry() / gnssEntry()	rt_thread 入口: 转调 this->xxxLoop()	startThreads():603,597,608,613	各按 CFG_FEATURE_* 条件
+app_sensors.hpp	method	Sensors::startThreads()	上电(main, tick=20): 建 rangeSem 与四条采集线程, 每条栈 1024B、优先级取入参 prio(实调 22)、tick 20, 建完立即 startup; tid==RT_NULL 抛 SCHED_THREAD_START_FAILED	app_flight_stack.hpp:971	只给 CFG_FEATURE_* 打开的外设建线程
+app_sensors.hpp	method	Sensors::startedThreads()	统计 4 个 tid 非空的数量(诊断行: 与 expectedThreads 对比区分"关掉"和"建失败")	app_flight_stack.hpp:992	-
+app_sensors.hpp	static-func	Sensors::expectedThreads()	编译期算应建线程数 = RANGE + (BARO or ADC) + FLOW + GNSS	app_flight_stack.hpp:991	当前构建 = 1+1+1+0 = 3
+app_sensors.hpp	method	Sensors::baroLoop()	20ms 一拍(cfg::time::io::kTickMs); 每拍先 samplePower(); up.baro=false 时只采样电源不读气压; 读成功 -> healthSet(baro)+publish baroSnap; 失败且 healthClear 真翻边沿 -> 抛异常只报一次; 不打印任何东西	baroEntry():572	#else 只剩电源采样
+app_sensors.hpp	method	Sensors::rangeLoop()	EXTI(rangeSem) 唤醒 + 100ms 兜底(cfg::time::range::kFallbackMs); up.range=false 直接跳过; NewData -> healthSet(range)+publish; NotReady/Invalid 不动健康位不报异常; Failed 且 healthClear 边沿 -> 抛异常; 兜底超时保证丢边沿也能退回轮询自愈	rangeEntry():573	仅 CFG_FEATURE_RANGE=1
+app_sensors.hpp	method	Sensors::flowLoop()	10ms 一拍(cfg::time::flow::kPeriodMs); up.flow=false 时每轮 probeFlow() 持续探测(自愈+给逻辑分析仪稳定波形); 读成功 -> healthSet(flow)+publish 并刷新 lastOkMs; 失败且 err!=FLOW_LOW_QUALITY 且 healthClear 边沿 -> 异常; 故意零打印	flowEntry():574	仅 CFG_FEATURE_FLOW=1
+app_sensors.hpp	method	Sensors::probeFlow()	1Hz 限流(kFlowProbePeriodMs)重跑 flow.init() 做热插拔自愈; 成功置 up.flow=true 并打印; 前 3 次失败打判定表; flowProbes==1 时抛一次 FLOW_NOT_FOUND	flowLoop():769	仅 CFG_FEATURE_FLOW=1
+app_sensors.hpp	method	Sensors::gnssLoop()	100ms 一拍(cfg::time::gnss::kPeriodMs); 轮询 gnssRx.writePos() 并把新字节逐字 gnss.feed(处理跨回绕); overruns 变化 -> GNSS_UART_OVERRUN; sol.seq 变了才 publish; posValid 边沿 -> healthSet/Clear(gnss) 并只报一次 GNSS_NO_FIX; takeError -> 异常	gnssEntry():575	仅 CFG_FEATURE_GNSS=1
+app_sensors.hpp	global	gnssLoop()::reportedOverruns	函数内 static: 上次已上报的 DMA 溢出计数, 用于"变化才报一次"	gnssLoop():895-897	仅 CFG_FEATURE_GNSS=1
+app_sensors.hpp	method	Sensors::samplePower()	搭气压计线程的车(20ms 一次): up.power=false 直接返回; ADC 读成功 -> healthSet(power)+publish; 失败且 healthClear 边沿 -> POWER_SAMPLE_FAILED; 不单独开线程	baroLoop():664,688	仅 CFG_FEATURE_ADC=1 有采样体
+app_sensors.hpp	static-func	Sensors::paintThreadWatermark()	纯转发 paintStackWatermark(): 把本线程未用栈填 0xA5 供水位线核对	baroLoop():660, rangeLoop():702, flowLoop():758, gnssLoop():875	四个 Loop 各在开头调一次
+app_health.hpp	include	app_state.h	app::health::* 八个位常量的唯一定义处; 本文件只做声明	位号来源 app_sensors.hpp:674 等	-
+app_health.hpp	namespace	dlx	四个访问器所在命名空间	app_sensors.hpp:49 include	访问器在 dlx, 位常量在 app
+app_health.hpp	function	dlx::healthSet()	声明: 置位并返回"这次调用是否真的改变了它"(返回值即边沿检测器)	app_sensors.hpp:674,717,776,906,947; app_flight_stack.hpp:410,520; app_link_thread.hpp:498	定义在 app_health.cpp
+app_health.hpp	function	dlx::healthClear()	声明: 清零并返回是否真的改变; 与 DLX_HANDLE_EXCEPTION 配对实现"故障只报一次"	app_sensors.hpp:681,736,788,907,953; app_link_thread.hpp:495	定义在 app_health.cpp
+app_health.hpp	function	dlx::healthOk()	声明: 这些位是否都置着(判"任意一位"要自己传 or 组合)	app_flight_stack.hpp:429,1334,1762,1763,2056	定义在 app_health.cpp
+app_health.hpp	function	dlx::healthBits()	声明: 取原始健康字节(遥测/日志上报)	app_flight_stack.hpp:285(makeGuards),1838(stepPublish)	定义在 app_health.cpp
+app_health.cpp	include	app_health.hpp	四个访问器的声明	healthSet 定义 :22	-
+app_health.cpp	include	dlx_interrupt_lock.hpp	dlx::InterruptLock(PRIMASK 保存/恢复), 不用 rt_hw_interrupt_disable	healthSet:24, healthClear:32, healthOk:40, healthBits:46	-
+app_health.cpp	namespace	(anonymous)	匿名命名空间: 把健康字节的存储藏在本 TU 内	healthByte:16	-
+app_health.cpp	global	healthByte	volatile uint8_t 单字节全局健康位存储(全工程唯一一份); 每位一个写者; 初值 0	healthSet:26 写, healthClear:34 写 -> healthOk:41, healthBits:47 读	受 InterruptLock 保护(读改写必须原子)
+app_health.cpp	function	dlx::healthSet()	定义: 取锁 -> before|bits -> 返回 healthByte!=before	app_sensors.hpp:674 等	-
+app_health.cpp	function	dlx::healthClear()	定义: 取锁 -> before&~bits -> 返回 healthByte!=before	app_sensors.hpp:681 等	-
+app_health.cpp	function	dlx::healthOk()	定义: 取锁 -> (healthByte&bits)==bits	app_flight_stack.hpp:1334 等	-
+app_health.cpp	function	dlx::healthBits()	定义: 取锁 -> 返回 healthByte 快照	app_flight_stack.hpp:285,1838	-
+# 不确定项1: Sensors::up.gnss 只见写者(app_sensors.hpp:508), 未找到任何读者
+# 不确定项2: GnssSample 的 sats/fix/hdopX10/posValid/altValid/courseValid/tickMs 在控制环确无读者, 但不能排除遥测/日志经 gnss.solution() 直接取用同一批字段
+# 不确定项3: PowerSample::valid 从未被赋值, 恒 false 且无读者; 将来若被读会得到"永远无效"的误导结论

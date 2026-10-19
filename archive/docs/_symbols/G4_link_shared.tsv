@@ -1,0 +1,120 @@
+app_link_thread.hpp	include	"app_flight_shared.hpp"	提供 FlightShared(rt/logQueue/perf/tid*)与 LogQueue; 本文件全部 sh.rt.* 的容器	app_link_thread.hpp:157,286,446	-
+app_link_thread.hpp	include	"app_stack.hpp"	提供 paintStackWatermark(); 线程入口记栈水位线	app_link_thread.hpp:449	-
+app_link_thread.hpp	include	"app_health.hpp"	提供 healthSet/healthClear: 失同步/重同步的边沿限流	app_link_thread.hpp:495,498	-
+app_link_thread.hpp	include	"app_state.h"	提供 Snapshot/snapshot()/postTask/Task/Guards/GroundStatus	app_link_thread.hpp:172,364,369,373	-
+app_link_thread.hpp	include	"app_guards.hpp"	提供 app::Guards/applyStickFacts; 与控制环共用一份判据	app_link_thread.hpp:59-71	-
+app_link_thread.hpp	include	"app_link_cmd.hpp"	提供 mapUpCmdOp/admitCommandChannel/taskOfCommand	app_link_thread.hpp:346,365,368	-
+app_link_thread.hpp	include	"dlx_interrupt_lock.hpp"	提供 dlx::InterruptLock: 下行快照要把姿态+状态取齐	app_link_thread.hpp:170	-
+app_link_thread.hpp	include	"app_exception_handler.h"	提供 DLX_HANDLE_EXCEPTION 统一异常出口	app_link_thread.hpp:350,496,499	-
+app_link_thread.hpp	include	"link/dlx_link_frame.hpp"	提供 Frame/FrameType/tryDecode/encodeDlAck/DlAckPayload	app_link_thread.hpp:240,244,247,471	-
+app_link_thread.hpp	include	"link/dlx_link_sched.hpp"	提供 SchedSlave/FrameAdmission/DownlinkPlanner(时分从端+采信前置)	app_link_thread.hpp:84,94,97,298,305	-
+app_link_thread.hpp	include	"link/dlx_link_downlink.hpp"	提供 DownlinkSource/buildDownlinkFrame	app_link_thread.hpp:155,259,261	-
+app_link_thread.hpp	include	"dlx_delay.hpp"	提供 delay_us: 窗口前的忙等(不让出 CPU)	app_link_thread.hpp:233	-
+app_link_thread.hpp	include	"dlx_timebase.hpp"	提供 UsExpander/usExpanderStep: CYCCNT -> 单调微秒	app_link_thread.hpp:134-135	-
+app_link_thread.hpp	include	"E220/dlx_e220.hpp"	提供 E220 透传模块与 sendRaw 一次性写帧	app_link_thread.hpp:272	-
+app_link_thread.hpp	namespace	dlx	本文件全部符号所在命名空间; 帧层名字在 dlx::link 下(两端共用)	app_flight_stack.hpp:78,947	-
+app_link_thread.hpp	using	link::Frame	把帧结构引进 dlx 顶层省 link:: 前缀; 其余仍显式限定	app_link_thread.hpp:284,469	-
+app_link_thread.hpp	using	link::FrameType	帧类型枚举(switch 的 case 标签)	app_link_thread.hpp:255,315-438	-
+app_link_thread.hpp	using	link::kTryDecoded	tryDecode 三态之一: 解出一帧	app_link_thread.hpp:471,475	-
+app_link_thread.hpp	using	link::kTryNeedMore	tryDecode 三态之一: 半帧, 一个字节都不能丢, 等下一批	app_link_thread.hpp:471,472	-
+app_link_thread.hpp	using	link::tryDecode	帧自定界解码(类型决定长度+CRC8, 字节流切帧)	app_link_thread.hpp:471	-
+app_link_thread.hpp	function	linkGuards()	链路线程侧的 app::Guards: 只填它拥有的项+快照状态类量, 供 admitTask 用	app_link_thread.hpp:369(唯一调用点)	读 sh.rt.bootReady:66/uplinkStreak:68/telem.height_m:69/杆量:70; 无锁, 靠控制环每圈发布的快照
+app_link_thread.hpp	struct	LinkThreadCtx	链路线程上下文集: 三只指针+信号量+调度器/采信/轮转+下行窗口与回执状态	app_flight_stack.hpp:78 定义成员, 881-884/902/932/942 初始化, 947 传给线程	全部成员只有链路线程访问; 不发布到共享区(只有 sh 指向的 FlightShared 是共享的)
+app_link_thread.hpp	member	LinkThreadCtx::sh	指向 FlightShared 的裸指针; 本线程一切共享字段的入口	写 app_flight_stack.hpp:881 -> 读 app_link_thread.hpp:157,286,446	仅本线程用的指针本身; 解引用对象是共享区
+app_link_thread.hpp	member	LinkThreadCtx::radio	指向 E220 模块; 只在本线程 sendRaw 时用	写 app_flight_stack.hpp:882 -> 读 app_link_thread.hpp:272	硬件对象不搬进共享区
+app_link_thread.hpp	member	LinkThreadCtx::ring	RXNE 中断填充的 RingByteBuffer; 本线程只搬字节不切帧	写 app_flight_stack.hpp:883 -> 读 app_link_thread.hpp:453,455,459	与中断共享但只有中断写、本线程读
+app_link_thread.hpp	member	LinkThreadCtx::sem	链路定时器信号量(硬定时器到期释放)	写 app_flight_stack.hpp:884 -> 读 app_link_thread.hpp:452	周期 = cfg::time::link::kTickMs = 8ms
+app_link_thread.hpp	member	LinkThreadCtx::sched	link::SchedSlave: 相位/窗口/guard/失同步都在它里面	init app_flight_stack.hpp:902 -> 读 app_link_thread.hpp:193,211,214,227,236,305,490,491,506,525-527	时间判据吃同一份 linkMicros()
+app_link_thread.hpp	member	LinkThreadCtx::admit	link::FrameAdmission: 采信前置(类型/量级/SEQ/间隔)	init app_flight_stack.hpp:932 -> app_link_thread.hpp:298	2026-10-11 起不再吃系统状态
+app_link_thread.hpp	member	LinkThreadCtx::dp	link::DownlinkPlanner: 下行槽内容轮转 ATT/STATE/SYS/GPS + 下行 SEQ	init app_flight_stack.hpp:942 -> app_link_thread.hpp:254	仅本线程用
+app_link_thread.hpp	member	LinkThreadCtx::dlServicedOpenUs	已服务过的窗口时刻; 保证一个窗口只发一帧	写 app_link_thread.hpp:265 -> 读 :222	仅本线程用; 不外发
+app_link_thread.hpp	member	LinkThreadCtx::dlLastSeenOpenUs	上一次见到的窗口时刻, 用于数"本机被授予多少窗口"	写 app_link_thread.hpp:219 -> 读 :218	仅本线程用; 不外发
+app_link_thread.hpp	member	LinkThreadCtx::dlWindows	本机被授予的下行窗口数	写 app_link_thread.hpp:220 -> 读 :196	经 linkFillDownlinkSource 折算成 DL_STATE.dlLoss 发布
+app_link_thread.hpp	member	LinkThreadCtx::dlSent	真正写进模块的帧数	写 app_link_thread.hpp:273 -> 读 :197	同上折算 dlLoss
+app_link_thread.hpp	member	LinkThreadCtx::dlGpsSkipped	轮转到 DL_GPS 而跳过的次数(kGnss=False)	写 app_link_thread.hpp:256 -> 无读者	★write-only: 全仓库零读者
+app_link_thread.hpp	struct	LinkThreadCtx::PendingAck	待发命令回执条目: 被应答帧的 SEQ+op+结果码	app_link_thread.hpp:107-112(嵌套定义),113(数组)	同一线程内生产(linkPushAck)与消费(linkServiceDownlink)
+app_link_thread.hpp	member	LinkThreadCtx::PendingAck::seq	被应答那一帧的 SEQ(协议 3.7 回显在 DL_ACK 帧头)	写 linkPushAck():148 -> 读 linkServiceDownlink():247	仅本线程用
+app_link_thread.hpp	member	LinkThreadCtx::PendingAck::op	被应答的 UP_CMD.op(线上字节, 非内部枚举)	写 linkPushAck():149 -> 读 linkServiceDownlink():245	仅本线程用
+app_link_thread.hpp	member	LinkThreadCtx::PendingAck::result	GroundStatus 结果码	写 linkPushAck():150 -> 读 linkServiceDownlink():246	仅本线程用
+app_link_thread.hpp	member	LinkThreadCtx::pendingAck[4]	回执环形队列本体, 最多 4 条; 环满丢最老	写 :143(移位),148-150 -> 读 :245-247, 消费移位 :249	不进临界区(同线程生产/消费)
+app_link_thread.hpp	member	LinkThreadCtx::pendingAckCount	当前回执条数	写 :145,151,251 -> 读 :141,142,242,248	仅本线程用
+app_link_thread.hpp	member	LinkThreadCtx::ackDropped	回执环满而丢掉的条数(注释: 不该发生)	写 :146 -> 无读者	★write-only
+app_link_thread.hpp	member	LinkThreadCtx::cmdsRejected	认得但当前不允许/没接线/未知 op 的命令数	写 :349(未知op),388(准入拒),435(UpPos) -> 无读者	★零读者, 未上报到状态行
+app_link_thread.hpp	member	LinkThreadCtx::dlsUnexpected	收到下行帧的次数(本机是飞控, 说明两端角色配错)	写 :438 -> 无读者	★零读者
+app_link_thread.hpp	function	linkMicros()	把 DWT->CYCCNT 经 UsExpander 展开成单调微秒(回绕 71.6min)	app_link_thread.hpp:193,226,234,298,305,490,491,506,522	只被链路线程调用 => s_exp 单写者; 2026-10-06 修: 原 CYCCNT 除法每 25.57s 回绕会永久拒帧
+app_link_thread.hpp	global	linkMicros()::s_exp	函数内静态 UsExpander; POD 零初始化 = 常量初始化, 无运行期守卫不抢锁	写/读 linkMicros():134-135	仅链路线程访问
+app_link_thread.hpp	function	linkPushAck()	入队一条命令回执; 环满丢最老(回执价值在最近那条)	app_link_thread.hpp:394(唯一调用点)	写 ctx->pendingAck/pendingAckCount/ackDropped; 无锁, 同线程生产消费
+app_link_thread.hpp	function	linkFillDownlinkSource()	取一份"同一时刻"的姿态+状态快照填进下行数据源	app_link_thread.hpp:260(唯一调用点)	读 sh.rt.telem:171 整体拷; 读 dlWindows/dlSent:196-197; sched.uplinkLossPercent(linkMicros()):193
+app_link_thread.hpp	function	linkServiceDownlink()	在自己的下行窗口里发一帧: 回执优先, 否则按轮转发遥测	app_link_thread.hpp:503(唯一调用点)	写 sh.rt.linkTxSkipGps:257/linkTxFrames:274; 写 ctx->dlWindows/dlLastSeenOpenUs/dlServicedOpenUs/dlSent/dlGpsSkipped; 无锁(单写者+32位对齐)
+app_link_thread.hpp	function	linkHandleUpFrame()	处理一帧已解出的上行帧: 采信 -> 锚相位 -> 按类型写共享 -> 回执	app_link_thread.hpp:477(唯一调用点)	写 sh.rt.uplinkStreak/linkAdmitRejects/linkCmdsApplied/lastValidCtrl 及 setpoint 等; 必须"先 admit 再 onMasterFrame"; 被拒帧不改任何历史
+app_link_thread.hpp	function	linkHandleUpFrame()::1-admit	调 ctx->admit.admit(raw,len,f,linkMicros()); 非 Ok 只 ++sh.rt.linkAdmitRejects 后 return	读 ctx->admit -> 写 sh.rt.linkAdmitRejects:300	无锁; 不再判"命令能不能执行"(那是 4 的活)
+app_link_thread.hpp	function	linkHandleUpFrame()::2-onMasterFrame	只有采信的帧才允许锚定相位	app_link_thread.hpp:305	调 ctx->sched.onMasterFrame(linkMicros(), f.seq); 无锁
+app_link_thread.hpp	function	linkHandleUpFrame()::3-uplinkStreak	连续有效上行计数饱和+1(uint16 不回绕, 避免解锁门槛突然失败)	app_link_thread.hpp:310-313	rt_enter_critical 包住; 写 sh.rt.uplinkStreak(读方 linkGuards:68)
+app_link_thread.hpp	function	linkHandleUpFrame()::case UpCtrl	摇杆帧 = 自稳档: 写命令0/油门/期望姿态/高度0/杆量 counts	app_link_thread.hpp:316-341	rt_enter_critical; 写 sh.rt.command=0, manualThrottle, setpoint.attitude(ZYX, pitch/roll x kTiltMax, yaw 恒0), setpoint.height_m=0, lastValidCtrl, lastRollN/lastPitchN/lastThrN, lastStickValid=true; ++sh.rt.linkCmdsApplied:339; 无 ACK
+app_link_thread.hpp	function	linkHandleUpFrame()::case UpCmd	命令帧: mapUpCmdOp -> admitCommandChannel -> taskOfCommand -> admitTask -> postTask	app_link_thread.hpp:342-396	无 rt_enter_critical; 用 app::snapshot()(内部 InterruptLock)+postTask()(InterruptLock); 写 lastValidCtrl:374(申请)/379(Ping); 通过或 Ping 时 ++linkCmdsApplied:390; 未知 op ++cmdsRejected:349 并抛异常; 非 Ping 且无 Task 回 BadCommand; 结尾无条件 linkPushAck:394
+app_link_thread.hpp	function	linkHandleUpFrame()::case UpSetpoint	定高绝对目标; ALT_VALID=0 时保持上次目标不清零	app_link_thread.hpp:397-407	rt_enter_critical; 仅当 kFlagAltValid 才写 sh.rt.altTargetM:402; 总写 lastValidCtrl:404; ++linkCmdsApplied:406(无条件)
+app_link_thread.hpp	function	linkHandleUpFrame()::case UpVel	定速三轴世界系绝对速度, 三轴一起写+置有效位	app_link_thread.hpp:408-418	rt_enter_critical; 写 sh.rt.velTargetMps[0..2]:411-413, velTargetValid=true:414, lastValidCtrl:415; ++linkCmdsApplied:417
+app_link_thread.hpp	function	linkHandleUpFrame()::case UpMotor	测试模式直控: 一帧四路整份覆盖, 本层只缓存	app_link_thread.hpp:419-431	rt_enter_critical; for kMotorCount 写 sh.rt.motorCmdValue[i]:426, lastValidCtrl:428; ++linkCmdsApplied:430; 是否生效由控制环按 Manual+Armed 判
+app_link_thread.hpp	function	linkHandleUpFrame()::case UpPos	位置注入本轮不用: 只计数不静默丢弃	app_link_thread.hpp:432-436	无锁; ++ctx->cmdsRejected:435; 不 ++linkCmdsApplied
+app_link_thread.hpp	function	linkHandleUpFrame()::default	收到下行帧(角色配错)	app_link_thread.hpp:437-439	无锁; ++ctx->dlsUnexpected:438; 不 ++linkCmdsApplied
+app_link_thread.hpp	function	linkTelemetryThreadEntry()	链路线程主循环: 取信号量 -> 搬字节 -> 切帧 -> 相位 -> 下行 -> 发布	app_flight_stack.hpp:947 rt_thread_create("link_tel",...,&linkCtx,3072,24,20)	优先级 24 / 栈 3072B / tick 20; 信号量由 linkTimer 按 cfg::time::link::kTickMs=8ms 释放(源码头注释写 10ms 已过期); 局部 asmBuf[64]/asmL/off 均在栈上
+app_link_thread.hpp	function	linkTelemetryThreadEntry()::1-copy	从 ring 环形缓冲搬进组帧缓冲, 记真实字节数	app_link_thread.hpp:451-464	取信号量后执行; 写 sh.rt.linkBytesIn += want:463; 无锁(中断只增 count, 32 位对齐不撕裂); read 失败即 break
+app_link_thread.hpp	function	linkTelemetryThreadEntry()::2-decode	tryDecode 循环: 半帧留、成帧交给 linkHandleUpFrame、坏帧只前进 1 字节	app_link_thread.hpp:466-486	写 sh.rt.linkRxFrames:476 / linkRxRejects:479; 调 linkHandleUpFrame:477; memmove 压实剩余半帧; 无锁
+app_link_thread.hpp	function	linkTelemetryThreadEntry()::3-phase	sched.poll 锁存失同步; 按健康位边沿各报一次异常	app_link_thread.hpp:488-500	调 healthClear/healthSet(app::health::link), 真变化才抛 LINK_DESYNC:496 / LINK_RESYNCED:499; 不写 sh.rt.*
+app_link_thread.hpp	function	linkTelemetryThreadEntry()::4-downlink	linkServiceDownlink 发一帧; 失同步时把连续上行计数归零	app_link_thread.hpp:502-511	调 linkServiceDownlink:503; rt_enter_critical 写 sh.rt.uplinkStreak=0:509(链路断了必须归零, 否则旧计数放行解锁)
+app_link_thread.hpp	function	linkTelemetryThreadEntry()::5-publish	同一个时刻快照四个量发布到共享区, 供日志线程读	app_link_thread.hpp:513-529	rt_enter_critical 内写 sh.rt.linkMuted:524 / linkGoodStreak:525 / linkWindowArmed:526 / linkUlLossPct:527; nowUs 取一次:522; 读方 app_log_thread.hpp:304-307
+app_link_cmd.hpp	include	<stdint.h>	uint8_t/uint16_t 等定长类型	app_link_cmd.hpp:34,63,105	-
+app_link_cmd.hpp	include	"app_state.h"	CommandOp/GroundStatus/Task/Mode/isKnownMode/modeTask	app_link_cmd.hpp:34,63,75,88,105,140	-
+app_link_cmd.hpp	namespace	app	app 侧链路命令接线(不是 dlx); 线上字节 <-> 业务枚举 <-> 状态迁移请求	app_link_thread.hpp:346,365,368,369	方案甲: 库只管"字节在不在协议表", 业务词汇归 app
+app_link_cmd.hpp	function	mapUpCmdOp()	线上 UP_CMD.op -> 内部 CommandOp 的显式表; 未知 op 返回 false	app_link_thread.hpp:346 / test/state_step_test.cpp:702,716	无锁纯函数; 不 static_cast 的原因: 两份真相必须显形
+app_link_cmd.hpp	function	wireOpOf()	业务枚举 -> 线上编号(内部枚举值恰等于线上编号)	test/state_step_test.cpp:708	★固件内零调用; DL_ACK 回显用的是帧里的 op 字节
+app_link_cmd.hpp	function	commandAllowsWireless()	协议 3.7 权限列: 只有飞行相关 8 条+Ping 允许无线	app_link_cmd.hpp:90 / test:737-746,781	无锁纯函数; 标定/参数/日志/维护必须走有线
+app_link_cmd.hpp	function	admitCommandChannel()	通道级准入: 不涉及状态; 无线发越权命令回 AuthFail	app_link_thread.hpp:365 / test:747,750	状态级由 admitTask 回答, 保证"为什么被拒"只有一个来源
+app_link_cmd.hpp	function	taskOfCommand()	命令 -> 状态迁移请求; SetMode 把 arg 消化成 4 个模式位中一位	app_link_thread.hpp:368 / test:755-770	arg 域检查(isKnownMode:129)是防御, DL_LIB 已查过一遍; Ping/未接线返回 false
+app_link_cmd.hpp	function	commandIsUnwired()	协议表里有、本轮没接线的命令(-> 回 BadCommand 不谎报已执行)	test/state_step_test.cpp:774-779	★固件内零调用: app_link_thread.hpp:380-384 的 else 分支自行判"无 Task 且非 Ping"
+app_flight_shared.hpp	include	"rtthread.h"	rt_thread_t/rt_enter_critical/rt_tick_*	app_flight_shared.hpp:51,68,110; app_log_thread.hpp	-
+app_flight_shared.hpp	include	"release_header.h"	FlightRuntimeState/FlightTelemetry/PerfStats/LogChannel	app_flight_shared.hpp:128; release_header.h:14 反向包含 app_log_channel.hpp	循环包含由 #pragma once 阻断
+app_flight_shared.hpp	include	"W25Q128/dlx_flash_manager_config.h"	LogEntry(日志队列元素类型)	app_flight_shared.hpp:33,49,65,82	-
+app_flight_shared.hpp	namespace	dlx	共享区/日志队列/负载累加器命名空间	app_flight_stack.hpp:77-79; app_log_thread.hpp:25	-
+app_flight_shared.hpp	constexpr	kMaxEntriesPerRun	一次排空日志队列最多取多少条(别让日志线程久占)	无调用方	★=24 但零调用方; app_log_thread.hpp:43 另有 MAX_ENTRIES_PER_RUN=24, cfg::log::kMaxEntriesPerRun 也是 24 => 三份同名
+app_flight_shared.hpp	struct	LogQueue	控制线程 -> 日志线程的日志队列(单生产者单消费者)	定义 :30; 实例 FlightShared::logQueue:129	容器不带策略, 取齐由调用方加锁
+app_flight_shared.hpp	constexpr	LogQueue::kCapacity	队列容量 = (uint16_t)cfg::log::kQueueDepth = 16	app_flight_shared.hpp:52,53,59,71; app_log_thread.hpp:343	注释写"16 条 x 10ms = 160ms", 链路 tick 实为 8ms
+app_flight_shared.hpp	member	LogQueue::items[kCapacity]	LogEntry 数组本体(环形)	写 logQueuePush():58 -> 读 logQueuePop():70	rt_enter_critical 保护(两方都是线程, 无 ISR)
+app_flight_shared.hpp	member	LogQueue::head	读位置(日志线程视角)	写 logQueuePush():53(丢最老), logQueuePop():71 -> 读 logQueuePop():70	同上临界区
+app_flight_shared.hpp	member	LogQueue::tail	写位置(控制线程视角)	写 logQueuePush():58,59 -> 读 logQueuePush():58	同上临界区
+app_flight_shared.hpp	member	LogQueue::count	当前条数	写 logQueuePush():52,54,60 -> 读 :52, logQueuePop():69, app_log_thread.hpp:294	同上临界区
+app_flight_shared.hpp	member	LogQueue::dropped	本负载窗口内因满丢掉的条数	写 logQueuePush():55 -> 读 app_flight_stack.hpp:1974, 清 :1987	不静默丢包: 台架上表现为"日志莫名不连续"
+app_flight_shared.hpp	member	LogQueue::droppedTotal	开机至今累计丢掉条数(只增)	写 logQueuePush():56 -> 读 app_log_thread.hpp:295	零清零点
+app_flight_shared.hpp	function	logQueuePush()	入队; 队列满时丢最老而不是丢新	app_flight_stack.hpp:1935(控制线程)	临界区 = rt_enter_critical(非 InterruptLock): 生产/消费两方都是线程, 无 ISR 参与; 写 items/tail/count/dropped/droppedTotal
+app_flight_shared.hpp	function	logQueuePop()	出队; 空则返回 false	app_log_thread.hpp:184,208; app_flight_shared.hpp:83	临界区 = rt_enter_critical; 写 head/count
+app_flight_shared.hpp	function	logQueueDrain()	把整条队列丢空(没有日志出口时用, 不能堵住控制线程)	app_log_thread.hpp:399	内部循环 logQueuePop; 不写 dropped/droppedTotal
+app_flight_shared.hpp	struct	PerfAccum	DWT 负载累加器: 控制线程写, 日志线程只写 logSum/logCnt	定义 :90; 实例 FlightShared::perf:130	perfAdd(控制线程独占) vs perfAddLocked(日志线程进临界区)
+app_flight_shared.hpp	member	PerfAccum::loopSum / loopMax	主循环周期累加 / 单圈最大耗时	写 app_flight_stack.hpp:1959-1962 -> 读 :1967-1968, 清 :1976-1977	控制线程独占
+app_flight_shared.hpp	member	PerfAccum::ekfSum / ekfCnt	EKF 慢路径周期累加 / 采样次数	写 perfAdd app_flight_stack.hpp:1125 -> 读 :1969, 清 :1978-1979	同上
+app_flight_shared.hpp	member	PerfAccum::ctrlSum / ctrlCnt	控制器+混控周期累加 / 采样次数	写 perfAdd app_flight_stack.hpp:1738 -> 读 :1970, 清 :1980-1981	同上
+app_flight_shared.hpp	member	PerfAccum::ioSum / ioCnt	IMU FIFO+气压计读取周期累加 / 采样次数	写 perfAdd app_flight_stack.hpp:1137 -> 读 :1971, 清 :1982-1983	同上
+app_flight_shared.hpp	member	PerfAccum::logSum / logCnt	日志打包落盘周期累加 / 采样次数	写 perfAddLocked app_log_thread.hpp:188,213,259 -> 读 app_flight_stack.hpp:1972, 清 :1984-1985	★唯一跨线程字段: 日志线程用 rt_enter_critical
+app_flight_shared.hpp	member	PerfAccum::samples	本统计窗口内主循环次数	写 app_flight_stack.hpp:1958, 清 :1986 -> 读 :1967,1973	控制线程独占
+app_flight_shared.hpp	function	perfAdd()	控制线程专用: 独占累加器, 不进临界区	app_flight_stack.hpp:1125,1137,1738	无锁; 省掉每圈两次关中断
+app_flight_shared.hpp	function	perfAddLocked()	日志线程专用: 加完再退临界区(控制线程会周期性清零)	app_log_thread.hpp:188,213,259	rt_enter_critical 包住 sum+=cycles; ++cnt
+app_flight_shared.hpp	struct	FlightShared	控制/链路/日志三线程共同看得见的那块内存(只放数据不放硬件)	app_flight_stack.hpp:77 实例; app_link_thread.hpp:59,157,286,446; app_log_thread.hpp:155	依赖方向单向: 线程入口只依赖本文件
+app_flight_shared.hpp	member	FlightShared::rt	跨线程飞行状态(指令/遥测/负载/日志状态)	写: 链路线程 app_link_thread.hpp:300-527 / 控制线程 app_flight_stack.hpp:1065-1975; 读: 控制环/链路线程 linkGuards/日志线程 app_log_thread.hpp:296-312(临界区内)	多写者按字段划分; 写入侧多为单字对齐或短临界区
+app_flight_shared.hpp	member	FlightShared::logQueue	控制线程 -> 日志线程的日志队列	写 app_flight_stack.hpp:1935 -> 读 app_log_thread.hpp:184,208,399	临界区在 logQueuePush/Pop 内部
+app_flight_shared.hpp	member	FlightShared::perf	负载累加器	写 app_flight_stack.hpp:1125-1987, app_log_thread.hpp:188,213,259 -> 读 app_flight_stack.hpp:1967-1987, app_log_thread.hpp:277	logSum/logCnt 走 perfAddLocked
+app_flight_shared.hpp	member	FlightShared::tidMain	主线程(控制环)句柄: 栈水位线用	写 release.cpp:292(rt_thread_self) -> 读 app_log_thread.hpp:384-385	仅日志线程读
+app_flight_shared.hpp	member	FlightShared::tidLink	链路线程句柄(原 nrf_tel)	写 app_flight_stack.hpp:966 -> 读 app_log_thread.hpp:386-387	线程创建失败时为 RT_NULL
+app_flight_shared.hpp	member	FlightShared::tidLog	日志线程句柄	写 app_flight_stack.hpp:967 -> 读 app_log_thread.hpp:388-389	同上
+app_log_channel.hpp	include	<stdint.h>	uint16_t(EXCEPTION_SLOTS/槽数)	app_log_channel.hpp:29	-
+app_log_channel.hpp	include	"dlx_exception.h"	ExceptionCode(异常渠道的值类型)	app_log_channel.hpp:33	-
+app_log_channel.hpp	include	"dlx_text_mailbox.hpp"	TextMailbox(文本渠道)	app_log_channel.hpp:43	-
+app_log_channel.hpp	include	"dlx_value_mailbox.hpp"	ValueMailbox 模板(中断安全定长值信箱)	app_log_channel.hpp:33	-
+app_log_channel.hpp	namespace	dlx	外层命名空间(与全工程一致)	app_log_channel.hpp:24; release.cpp:135	-
+app_log_channel.hpp	namespace	logchannel	日志渠道的编译期参数命名空间	app_log_channel.hpp:26-30	-
+app_log_channel.hpp	constexpr	logchannel::EXCEPTION_SLOTS	异常请求槽数 = 16(异常是一条条现场, 16 条够扛一次连发)	app_log_channel.hpp:33	-
+app_log_channel.hpp	using	ExceptionMailbox	ValueMailbox<ExceptionCode,16> 的值信箱别名(中断安全)	app_log_channel.hpp:44; release.cpp:134 实例化; app_log_thread.hpp:137,142-144,226-236,322-323; app_exception_handler.cpp:51,54; test/dlx_mailbox_test.cpp:18,222	生产者 = DLX_EXCEPTION_HANDLER(任意上下文), 消费者 = 日志线程
+app_log_channel.hpp	struct	LogChannel	当前生效的日志渠道: 两根信箱指针(都允许 nullptr = 没人接则丢弃)	release.cpp:135 构造; release_header.h:378 成员; app_log_thread.hpp:137,172; app_exception_handler.cpp:51	由拥有者(main 栈)创建并保证生命周期
+app_log_channel.hpp	member	LogChannel::textMailbox	文本渠道指针: logLine 投递 SimpleLogW 帧	写 release.cpp:135 -> 读 release_header.h:437,456 / app_log_thread.hpp:147,148,242,243,263,265,318,319	生产方只投递, 不碰 txBuf/协议/DMA
+app_log_channel.hpp	member	LogChannel::exceptionMailbox	异常渠道指针: DLX_EXCEPTION_HANDLER 投递码, 日志线程取走成 DLXExceptionW 帧	写 app_exception_handler.cpp:54 push; 写 release.cpp:135 -> 读 app_log_thread.hpp:142,144,226,227,233,234,236,322,323	两条渠道互不转换: 异常不会自动翻译成人话
+# 不确定项1: wireOpOf()/commandIsUnwired() 在固件内零调用, 只有 test/state_step_test.cpp 覆盖; 若把测试算作调用方, 两者即"仅测试使用"
+# 不确定项2: sh.rt.linkTxFail 全仓库无写入点(linkServiceDownlink:270 注释说明 sendRaw 无可判失败条件), 但 app_log_thread.hpp:302 会读
+# 不确定项3: 源码注释多处写"链路线程周期 10ms", 实际 cfg::time::link::kTickMs=8ms, kSlotMs(normal)=24ms

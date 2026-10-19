@@ -4,6 +4,7 @@
 #include "stm32f4xx.h"
 #include "dlx_dma.hpp"
 #include "dlx_dshot_profile.hpp"
+#include "dlx_interrupt_lock.hpp"
 namespace dlx
 {
 
@@ -39,6 +40,7 @@ namespace dlx
 
         // 0 = 双缓冲内容一致, 无待同步; 2 = 刚 preload, 两块都待同步; 1 = 还差一块
         volatile uint8_t transferStatus = 0;
+        bool running{false};
 
         inline uint16_t getLowBitPeriod()
         {
@@ -72,19 +74,19 @@ namespace dlx
             return packet_telemetry; // append checksum
         }
 
-        void preEncode()
+        void encode(const uint16_t values[4], uint16_t encoded[DSHOT_DATA_ITEMS])
         {
             uint16_t crced[4] = {
-                appendCCR4forValue(throttle[0], false),
-                appendCCR4forValue(throttle[1], false),
-                appendCCR4forValue(throttle[2], false),
-                appendCCR4forValue(throttle[3], false)};
+                appendCCR4forValue(values[0], false),
+                appendCCR4forValue(values[1], false),
+                appendCCR4forValue(values[2], false),
+                appendCCR4forValue(values[3], false)};
             // 并行布局: 每个 DMA 项 = 1 次 Update 突发写 CCR1~CCR4,
             // 因此同一 bit 位置的 4 个电机必须相邻; DShot 帧先发 MSB
             for (uint8_t bit = 0; bit < 16; bit++) {
                 uint16_t mask = static_cast<uint16_t>(1u << (15 - bit));
                 for (uint8_t motor = 0; motor < 4; motor++) {
-                    preEncodedValue[bit * 4 + motor] =
+                    encoded[bit * 4 + motor] =
                         (crced[motor] & mask) ? getHighBitPeriod() : getLowBitPeriod();
                 }
             }
@@ -116,7 +118,8 @@ namespace dlx
         void initPreEncoded()
         {
             throttle[0] = throttle[1] = throttle[2] = throttle[3] = 0;
-            preEncode();
+            const uint16_t zero[4]{};
+            encode(zero, preEncodedValue);
             // 两块缓冲放同样的初始零油门帧, 保证双缓冲内容一致
             loadInto(dshotValue[0]);
             loadInto(dshotValue[1]);
@@ -164,6 +167,7 @@ namespace dlx
          */
         void start()
         {
+            running = true;
             dataTransferDMA.start();
         }
 
@@ -173,38 +177,32 @@ namespace dlx
         void stop()
         {
             dataTransferDMA.stop();
+            running = false;
             transferStatus = 0;
         }
 
-        // 直接覆盖油门并重新编码; 不做 while(transferStatus!=0) 阻塞等待.
-        // 原因: transferStatus 只能靠 DMA TC 中断递减; 若 DMA 未启动(未解锁/加锁后),
-        // 该值会卡在非零导致死等. 改为"最新值优先": 无论上次是否同步完, 本轮都直接写入,
-        // 由 TC 中断"陆续"把最新帧同步进空闲缓冲. 潜在代价是极小概率的一次撕裂帧
-        // (中断正在 memcpy 时被覆盖), 对 DShot 仅表现为该帧校验失败被丢弃, 不影响稳定.
-
-        //后来还是加上防撕裂了
-
         void preloadThrottle(uint16_t value0, uint16_t value1, uint16_t value2, uint16_t value3)
         {
-            while (transferStatus != 0);
-            throttle[0]    = value0;
-            throttle[1]    = value1;
-            throttle[2]    = value2;
-            throttle[3]    = value3;
-            preEncode();
-            transferStatus = 2;
+            const uint16_t values[4]{value0, value1, value2, value3};
+            preloadThrottle(values);
         }
-        // 外部需要保证传入的value是4个
-        void preloadThrottle(uint16_t value[])
+
+        void preloadThrottle(const uint16_t values[4])
         {
-            while (transferStatus != 0);
-            throttle[0]    = value[0];
-            throttle[1]    = value[1];
-            throttle[2]    = value[2];
-            throttle[3]    = value[3];
-            preEncode();
-            transferStatus = 2;
+            uint16_t encoded[DSHOT_DATA_ITEMS];
+            encode(values, encoded);
+            const InterruptLock lock;
+            for (uint8_t index = 0u; index < 4u; ++index) throttle[index] = values[index];
+            memcpy(preEncodedValue, encoded, sizeof(encoded));
+            if (running) {
+                transferStatus = 2u;
+            } else {
+                loadInto(dshotValue[0]);
+                loadInto(dshotValue[1]);
+                transferStatus = 0u;
+            }
         }
+
     };
 
 }

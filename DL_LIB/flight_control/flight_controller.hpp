@@ -63,6 +63,18 @@ namespace dlx
     {
         Quaternion attitude;   // 期望姿态 (世界系, w,x,y,z)
         float height_m{0.0f};  // 期望高度 [m], 向上为正
+        /**
+         * 垂速前馈 [m/s], 向上为正(2026-10-05 遥控闭环 M3 新增)。
+         *
+         * 为什么单独一个入口, 而不是"把高度目标做成斜坡":
+         *   定速模式(定速的 Z 轴)要的是**速度指令**, 自动降落要的是**恒定下降率**。
+         *   若靠"每周期把高度目标抬一点"来间接实现, 稳态会留下 h_err = vz / POS_Z_P 的
+         *   固定高度偏差(0.8 m/s 时约 0.4m) —— 那是把速度环做成了位置环, 而且这个偏差
+         *   会随 POS_Z_P 调参而变(不可验收)。
+         *   直接加在前馈上: 位置环仍然负责"守住高度", 前馈负责"以这个速度走"。
+         * 默认 0 = 纯高度保持(与原行为逐位一致)。
+         */
+        float vz_ff_mps{0.0f};
     };
 
     // 当前状态 (估计值)
@@ -320,7 +332,8 @@ namespace dlx
             const float thr_lo = _params.get(FlightParamId::THROTTLE_MIN);
             const float thr_hi = _params.get(FlightParamId::THROTTLE_MAX);
             const float h_err = sp.height_m - state.height_m;
-            const float vz_sp = constrain(_params.get(FlightParamId::POS_Z_P) * h_err,
+            // 垂速指令 = 位置环 + **前馈**; 前馈也要走同一个饱和(不能靠它绕过 VZ_MAX_*)
+            const float vz_sp = constrain(_params.get(FlightParamId::POS_Z_P) * h_err + sp.vz_ff_mps,
                                           -_params.get(FlightParamId::VZ_MAX_DOWN),
                                           _params.get(FlightParamId::VZ_MAX_UP));
             const float vz = state.vertical_velocity_valid ? state.vertical_velocity_mps : _vz_est;

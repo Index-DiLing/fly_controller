@@ -3,7 +3,6 @@
 #include "dlx_spi.hpp"
 #include "dlx_delay.hpp"
 #include "dlx_w25q128_config.h"
-
 namespace dlx
 {
     /**
@@ -26,6 +25,10 @@ namespace dlx
     {
     private:
         SPI &spi; ///< 已 init 的 SPI, 其 NSS 即 /CS
+
+        /** 最近一次 init() 的识别结果(给日志用: "识别失败"要能带上实际读到的 ID) */
+        uint32_t lastJedec{0u};
+        uint8_t  lastAttempts{0u};
 
         /** 只发一条指令(如 Write Enable) */
         void cmdOnly(W25Q128_Cmd cmd)
@@ -93,28 +96,67 @@ namespace dlx
          * 出厂默认 BP/TB/SEC/SRP 均为 0(无保护), 这里仍显式清一次,
          * 防止旧芯片或上次使用改过保护位导致写不进去.
          *
-         * @return true = 识别为 W25Q128JV(EF 40 18)
+         * **为什么带重试(2026-10-18 现场问题)**:
+         *   本板 /CS 没有外部上拉, MCU 复位期间它是浮空的(实测默认低), 芯片可能在上电/复位
+         *   过程中被 SCK 上的噪声灌进杂散指令而暂时"不理人"(JEDEC 读回 0x171717, SR1=0x17),
+         *   一段时间后自己恢复. 这种瞬时失败不该被当成"芯片坏了": 每次失败先发 66h/99h 软复位
+         *   (手册 7.4.15/7.4.16: 把芯片从任何未知状态拉回上电初始状态) + Release Power-Down,
+         *   隔 W25Q128_ID_RETRY_GAP_MS 再试, 最多 W25Q128_ID_ATTEMPTS 次.
+         *
+         * 失败时调用方可以读 lastJedecId()/lastInitAttempts() 把**实际 ID 值**打进日志 ——
+         * 只报"识别失败"没有价值, "JEDEC=0x171717, 试了 9 轮"才能一眼定位是芯片没应答.
+         *
+         * @return true = 识别为 W25Q128JV(EF 40 18) 且状态寄存器已清干净
          */
         bool init()
         {
-            releasePowerDown(); // 若上次掉电前执行过 Power-down, 必须先唤醒
-            delay_us(W25Q128_POWER_DOWN_RELEASE_US);
-            if (!waitBusy(100)) {
-                return false;
-            }
+            lastJedec      = 0u;
+            lastAttempts   = 0u;
+            for (uint8_t attempt = 0; attempt < W25Q128_ID_ATTEMPTS; ++attempt) {
+                ++lastAttempts;
+                if (attempt > 0u) {
+                    // 上一轮读到的是坏 ID: 先按手册把芯片拉回上电初始状态, 再等残留擦写结束
+                    reset();
+                    delay_us(W25Q128_ID_RESET_GAP_US);
+                }
+                releasePowerDown(); // 若上次掉电前执行过 Power-down, 必须先唤醒
+                delay_us(W25Q128_POWER_DOWN_RELEASE_US);
+                delay_ms(W25Q128_POWER_UP_MS); // tPUW: 刚上电/刚复位后芯片尚未准备好
+                if (!waitBusy(W25Q128_BUSY_WAIT_MS)) {
+                    continue; // 芯片还在忙(可能是上一次杂散指令触发的擦写), 等下一轮
+                }
 
-            const uint32_t id = readJEDEC();
-            if (id != ((uint32_t)W25Q128_MANUFACTURER_ID << 16 |
-                       (uint32_t)W25Q128_MEMORY_TYPE << 8 |
-                       (uint32_t)W25Q128_CAPACITY_ID)) {
-                return false;
-            }
+                lastJedec = readJEDEC();
+                if (lastJedec != ((uint32_t)W25Q128_MANUFACTURER_ID << 16 |
+                                  (uint32_t)W25Q128_MEMORY_TYPE << 8 |
+                                  (uint32_t)W25Q128_CAPACITY_ID)) {
+                    delay_ms(W25Q128_ID_RETRY_GAP_MS);
+                    continue;
+                }
 
-            // 清块保护(BP/TB/SEC/SRP 全 0); -IQ 的 QE=1 在状态寄存器-2, 不受影响
-            writeEnable();
-            writeStatusRaw(W25Q128_Cmd::WriteStatus1, 0x00);
-            return waitBusy(W25Q128_STATUS_WRITE_TIMEOUT_MS);
+                // 清块保护(BP/TB/SEC/SRP 全 0); -IQ 的 QE=1 在状态寄存器-2, 不受影响
+                writeEnable();
+                writeStatusRaw(W25Q128_Cmd::WriteStatus1, 0x00);
+                // 写状态是"非易失"写入: tW 最大 15ms, 期间芯片只理读状态.
+                // 这里**不能**只靠 waitBusy 的第一次读判断(它可能在 BUSY 还没拉高时就返回),
+                // 必须回读确认状态寄存器真的变成了 0x00.
+                delay_ms(1); // 先让 BUSY 有时间拉高, 再进轮询
+                if (!waitBusy(W25Q128_STATUS_WRITE_TIMEOUT_MS)) {
+                    continue;
+                }
+                if (readStatus1() != 0x00u) {
+                    continue; // 写保护没清掉(或刚才那一下读到了浮空值): 重来
+                }
+                return true;
+            }
+            return false;
         }
+
+        /** @brief 最近一次 init() 读到的 JEDEC ID(失败时用它把实际值打进日志) */
+        uint32_t lastJedecId() const { return lastJedec; }
+        /** @brief 最近一次 init() 总共试了几轮(W25Q128_ID_ATTEMPTS 封顶) */
+        uint8_t lastInitAttempts() const { return lastAttempts; }
+
 
         /* ==================== 状态与忙等待 ==================== */
 

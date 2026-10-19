@@ -1,0 +1,11 @@
+entry ram_main @ 0x2001C0D8, image 676 bytes
+running...
+START version=4
+  read[15] JEDEC=0x004018 OK
+  SR1=0x00
+  0xA2000002 ?
+  0xA3000060 ?
+  0xA4EF4018 ?
+  0xA5000000 ?
+  0xA6EF4018 ?
+DONE

@@ -305,6 +305,19 @@ namespace dlx
         }
 
         /**
+         * @brief 诊断用: 回读两路 CHIP_ID(期望加速度计 0x1E / 陀螺 0x0F)
+         *
+         * 只读, 不改任何配置. 给"地面串口调试模式"的启动自检用: init() 只回一个 bool,
+         * 分不清是加速度计不应答、陀螺不应答, 还是自检没过 —— 把 ID 打出来就有方向了
+         * (全 0x00/0xFF = 接线/片选/供电; 只有一个对 = 那一路的 CS 或焊接)。
+         */
+        void readChipIds(uint8_t &accelId, uint8_t &gyroId)
+        {
+            accelId = accelReadReg(BMI088_Reg::AccChipId);
+            gyroId  = gyroReadReg(BMI088_Reg::GyroChipId);
+        }
+
+        /**
          * @brief 读取两路 FIFO 数据并填入队列(加速度计 + 陀螺仪)
          *
          * 每次调用读取当前 FIFO 中全部(或队列能装下)的数据:

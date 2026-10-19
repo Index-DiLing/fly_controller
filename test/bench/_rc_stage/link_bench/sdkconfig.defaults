@@ -1,0 +1,8 @@
+# Bench firmware: no USB console is relied on (power budget is shared with a 1W E220 module).
+# Results travel over the radio as ASCII lines and are printed by the flight-controller bench.
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_LOG_DEFAULT_LEVEL_NONE=y
+CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE=y
+
+# The radio driver needs the UART driver, which is enabled by default; nothing else is required.
+CONFIG_FREERTOS_HZ=1000

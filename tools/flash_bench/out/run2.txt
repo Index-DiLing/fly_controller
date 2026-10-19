@@ -1,0 +1,391 @@
+entry ram_main @ 0x2001C134, image 1684 bytes
+running...
+START version=2
+  JEDEC = 0xEF4018 OK
+  JEDEC = 0x000000 <<< WRONG
+  JEDEC = 0x000000 <<< WRONG
+  JEDEC = 0x000000 <<< WRONG
+  JEDEC = 0x000000 <<< WRONG
+  JEDEC = 0x000000 <<< WRONG
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  NOCS  = 0x000000  (CS high / no chip)
+  NOCS  = 0x000000  (CS high / no chip)
+  NOCS  = 0x000000  (CS high / no chip)
+  NOCS  = 0x000000  (CS high / no chip)
+  0xA3000000 ?
+  0xA3000000 ?
+  NOCS  = 0x000000  (CS high / no chip)
+  NOCS  = 0x000000  (CS high / no chip)
+BATCH /8 plain         total=300   bad=300 first_bad=0x000000 at=0
+BATCH /8 cfg-rewrite   total=300   bad=300 first_bad=0x000000 at=0
+BATCH /16              total=300   bad=300 first_bad=0x000000 at=0
+BATCH /32              total=300   bad=300 first_bad=0x000000 at=0
+  CS-low-delay variant i=0 JEDEC=0x000000
+  CS-low-delay variant i=1 JEDEC=0x000000
+  CS-low-delay variant i=2 JEDEC=0x000000
+  CS-high-hold i=0 lastbyte=0x00
+  CS-high-hold i=1 lastbyte=0x00
+  CS-high-hold i=2 lastbyte=0x00
+  -- WRSR trial=0 sample=0
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0x000000 <<< WRONG
+  -- WRSR trial=0 sample=1
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=2
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=3
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=4
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=5
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=6
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=7
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=8
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=9
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=10
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=11
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=12
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=13
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=14
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=15
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=16
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=17
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=18
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=0 sample=19
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=0
+  SR1   = 0x03 (BUSY=1 WEL=1)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=1
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=2
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=3
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=4
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=5
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=6
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=7
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=8
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=9
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=10
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=11
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=12
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=13
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=14
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=15
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=16
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=17
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=18
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=1 sample=19
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=0
+  SR1   = 0x03 (BUSY=1 WEL=1)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=1
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=2
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=3
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=4
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=5
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=6
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=7
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=8
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=9
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=10
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=11
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=12
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=13
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=14
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=15
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=16
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=17
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=18
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=2 sample=19
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=0
+  SR1   = 0x03 (BUSY=1 WEL=1)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=1
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=2
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=3
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=4
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=5
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=6
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=7
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=8
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=9
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=10
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=11
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=12
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=13
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=14
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=15
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=16
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=17
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=18
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=3 sample=19
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=0
+  SR1   = 0x03 (BUSY=1 WEL=1)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=1
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=2
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=3
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=4
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=5
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=6
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=7
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=8
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=9
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=10
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=11
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=12
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=13
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=14
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=15
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=16
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=17
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=18
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=4 sample=19
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=0
+  SR1   = 0x03 (BUSY=1 WEL=1)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=1
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=2
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=3
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=4
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=5
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=6
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=7
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=8
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=9
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=10
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=11
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=12
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=13
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=14
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=15
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=16
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=17
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=18
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  -- WRSR trial=5 sample=19
+  SR1   = 0x00 (BUSY=0 WEL=0)
+  JEDEC = 0xEF4018 OK
+  RACEN: 6/6 trials saw BUSY not yet asserted
+BATCH /8 3000x         total=3000  bad=0   first_bad=0x000000 at=0
+DONE
